@@ -128,12 +128,22 @@ class FineTuner:
 
         scheduler = None
         if use_scheduler:
-            from torch.optim.lr_scheduler import get_linear_schedule_with_warmup
-            scheduler = get_linear_schedule_with_warmup(
-                optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=total_steps
-            )
+            try:
+                from transformers import get_linear_schedule_with_warmup
+                scheduler = get_linear_schedule_with_warmup(
+                    optimizer,
+                    num_warmup_steps=warmup_steps,
+                    num_training_steps=total_steps
+                )
+            except ImportError:
+                self.log("⚠️ transformers版本较旧，使用线性学习率调度")
+                # 使用PyTorch内置的线性调度器作为备选
+                from torch.optim.lr_scheduler import LambdaLR
+                def lr_lambda(current_step: int):
+                    if current_step < warmup_steps:
+                        return float(current_step) / float(max(1, warmup_steps))
+                    return max(0.0, float(total_steps - current_step) / float(max(1, total_steps - warmup_steps)))
+                scheduler = LambdaLR(optimizer, lr_lambda)
 
         # 打印配置
         self.log(f"\n微调配置:")
@@ -208,7 +218,10 @@ class FineTuner:
                 if (batch_idx + 1) % max(1, num_batches // 10) == 0:
                     avg_loss = total_loss / (batch_idx + 1)
                     progress = (batch_idx + 1) / num_batches * 100
-                    current_lr = scheduler.get_last_lr()[0] if scheduler else lr
+                    if scheduler is not None:
+                        current_lr = scheduler.get_last_lr()[0]
+                    else:
+                        current_lr = lr
                     self.log(f"  进度: {progress:.0f}% | 平均Loss: {avg_loss:.4f} | LR: {current_lr:.2e}")
 
             avg_epoch_loss = total_loss / num_batches
