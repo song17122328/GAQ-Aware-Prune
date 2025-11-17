@@ -377,7 +377,7 @@ def main():
 
         # 重新加载保存的模型
         logger.log(f"从检查点重新加载模型: {logger.best_checkpoint_path}")
-        checkpoint = torch.load(logger.best_checkpoint_path)
+        checkpoint = torch.load(logger.best_checkpoint_path, weights_only=False)
         model = checkpoint['model']
         tokenizer = checkpoint['tokenizer']
         logger.log("✅ 模型重新加载成功")
