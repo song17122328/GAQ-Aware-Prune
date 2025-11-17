@@ -21,7 +21,6 @@ python llama3_unbalanced_pruning_v3_gqa_aware.py \
     --max_pruning_rate 0.5 \
     --layer_start 0 \
     --layer_end 32 \
-    --device cuda \
     --num_examples 10 \
     --head_dim 128 \
     --gqa_ratio 4 \
@@ -30,6 +29,8 @@ python llama3_unbalanced_pruning_v3_gqa_aware.py \
     --test_after_prune \
     --max_seq_len 128
 ```
+
+**注意**: 设备会自动选择最优 GPU，无需手动指定
 
 ---
 
@@ -80,11 +81,14 @@ python llama3_unbalanced_pruning_v3_gqa_aware.py \
 | `--head_dim` | `128` | 每个 attention head 的维度（Llama-3 固定）|
 | `--gqa_ratio` | `4` | Q:KV 比例（Llama-3 为 4:1）|
 
+### 设备选择
+
+**自动选择**: 程序会自动选择显存最多的GPU，无需手动指定设备。
+
 ### 其他参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--device` | `cuda` | 计算设备（会自动选择最佳GPU）|
 | `--num_examples` | `10` | Taylor 重要性评估的样本数 |
 | `--max_seq_len` | `128` | PPL 评估最大序列长度 |
 | `--prune_mlp` | - | 是否也剪枝 MLP（使用 Taylor importance）|

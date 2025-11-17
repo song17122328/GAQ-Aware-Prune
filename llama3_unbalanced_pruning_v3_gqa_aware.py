@@ -101,8 +101,6 @@ def main():
                        help='剪枝结束层')
 
     # 其他参数
-    parser.add_argument('--device', type=str, default='cuda',
-                       help='设备')
     parser.add_argument('--num_examples', type=int, default=10,
                        help='Taylor重要性评估的样本数')
     parser.add_argument('--save_model', action='store_true',
@@ -124,15 +122,15 @@ def main():
 
     args = parser.parse_args()
 
-    # 设置设备
-    print(f"默认设备: {args.device}")
-    if args.device == "cuda":
-        try:
-            from LLMPruner.utils.get_best_gpu import get_best_gpu
-            args.device = "cuda:" + str(get_best_gpu())
-        except:
-            args.device = "cuda:0"
-    print(f"使用设备: {args.device}")
+    # 自动选择最优 GPU
+    try:
+        from LLMPruner.utils.get_best_gpu import get_best_gpu
+        device = f"cuda:{get_best_gpu()}"
+    except:
+        device = "cuda:0"
+
+    print(f"自动选择设备: {device}")
+    args.device = device
 
     # 创建日志
     logger = LoggerWithDepth(
@@ -419,7 +417,7 @@ def main():
         model.to(args.device)
         model.eval()
 
-        ppl = PPLMetric(model, tokenizer, ['wikitext2', 'ptb'],
+        ppl = PPLMetric(model, tokenizer, ['wikitext2'],
                        seq_len=args.max_seq_len, device=args.device)
         logger.log(f"\n剪枝后 PPL: {ppl}")
 

@@ -120,23 +120,12 @@ class PPLMetric:
         Returns:
             torch.Tensor: tokenized数据
         """
-        # 根据数据集名称加载
+        # 只支持 wikitext2 数据集
         if dataset_name.lower() in ['wikitext', 'wikitext2', 'wikitext-2']:
             dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
             text_field = 'text'
-        elif dataset_name.lower() in ['wikitext103', 'wikitext-103']:
-            dataset = load_dataset('wikitext', 'wikitext-103-raw-v1', split='test')
-            text_field = 'text'
-        elif dataset_name.lower() in ['ptb', 'penn-treebank']:
-            dataset = load_dataset('ptb_text_only', split='test')
-            text_field = 'sentence'
-        elif dataset_name.lower() == 'c4':
-            # C4数据集较大，只取部分
-            dataset = load_dataset('c4', 'en', split='validation', streaming=True)
-            dataset = list(dataset.take(1000))
-            text_field = 'text'
         else:
-            raise ValueError(f"不支持的数据集: {dataset_name}")
+            raise ValueError(f"不支持的数据集: {dataset_name}. 当前仅支持 wikitext2")
 
         # 合并所有文本
         if isinstance(dataset, list):

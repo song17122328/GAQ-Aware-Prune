@@ -40,10 +40,7 @@ loss = model(examples, labels=examples).loss
 
 #### 支持的数据集
 
-- `wikitext` / `wikitext2` - WikiText-2
-- `wikitext103` - WikiText-103
-- `c4` - C4数据集
-- `ptb` - Penn TreeBank
+- `wikitext` / `wikitext2` / `wikitext-2` - WikiText-2（唯一支持）
 
 #### 其他函数
 
@@ -71,11 +68,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3-8B-Instruct")
 tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3-8B-Instruct")
 
-# 在多个数据集上评估
+# 评估 wikitext2 数据集
 ppl_metric = PPLMetric(
     model,
     tokenizer,
-    datasets=['wikitext2', 'ptb'],
+    datasets=['wikitext2'],
     seq_len=128,
     device='cuda'
 )
@@ -84,7 +81,6 @@ ppl_metric = PPLMetric(
 print(ppl_metric)
 # 输出:
 #   wikitext2 (wikitext-2-raw-v1): 12.34
-#   ptb: 15.67
 
 # 字典式访问
 wikitext_ppl = ppl_metric['wikitext2 (wikitext-2-raw-v1)']

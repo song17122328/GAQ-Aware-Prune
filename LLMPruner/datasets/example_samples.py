@@ -30,22 +30,12 @@ def get_examples(
         torch.Tensor: tokenized input_ids, shape [num_samples, seq_len]
     """
 
-    # 根据数据集名称加载对应数据
+    # 只支持 wikitext2 数据集
     if dataset_name.lower() in ['wikitext', 'wikitext2', 'wikitext-2']:
         dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split=split)
         text_field = 'text'
-    elif dataset_name.lower() in ['wikitext103', 'wikitext-103']:
-        dataset = load_dataset('wikitext', 'wikitext-103-raw-v1', split=split)
-        text_field = 'text'
-    elif dataset_name.lower() == 'c4':
-        dataset = load_dataset('c4', 'en', split=split, streaming=True)
-        text_field = 'text'
-    elif dataset_name.lower() in ['ptb', 'penn-treebank']:
-        dataset = load_dataset('ptb_text_only', split=split)
-        text_field = 'sentence'
     else:
-        raise ValueError(f"Unsupported dataset: {dataset_name}. "
-                        f"Supported: wikitext, wikitext103, c4, ptb")
+        raise ValueError(f"不支持的数据集: {dataset_name}. 当前仅支持 wikitext2")
 
     # 收集文本样本
     texts = []
