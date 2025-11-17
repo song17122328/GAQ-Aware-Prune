@@ -89,8 +89,12 @@ def main():
     # 其他参数
     parser.add_argument('--save_model', action='store_true',
                        help='是否保存模型')
+    parser.add_argument('--test_original_ppl', action='store_true',
+                       help='剪枝前是否评估原模型PPL（作为baseline）')
     parser.add_argument('--test_after_prune', action='store_true',
                        help='剪枝后是否评估PPL')
+    parser.add_argument('--eval_seq_len', type=int, default=128,
+                       help='PPL评估时的序列长度（与剪枝后、微调后保持一致）')
 
     # GQA配置
     parser.add_argument('--head_dim', type=int, default=128,
@@ -98,9 +102,13 @@ def main():
     parser.add_argument('--gqa_ratio', type=int, default=4,
                        help='Q:KV比例（Llama-3默认4:1）')
 
-    # MLP剪枝
+    # 剪枝目标选择
+    parser.add_argument('--prune_attention', action='store_true', default=True,
+                       help='是否剪枝Attention层（默认True）')
     parser.add_argument('--prune_mlp', action='store_true',
-                       help='是否也剪枝MLP（默认只剪Attention）')
+                       help='是否剪枝MLP层（默认False）')
+    parser.add_argument('--no_prune_attention', dest='prune_attention', action='store_false',
+                       help='禁用Attention剪枝（用于只剪枝MLP的场景）')
 
     # 微调参数
     parser.add_argument('--finetune', action='store_true',
@@ -203,6 +211,24 @@ def main():
     all_samples = get_examples('wikitext', tokenizer, num_samples=max_samples, seq_len=512, split='test')
     logger.log(f"✅ 加载完成，shape: {all_samples.shape}")
 
+    # ==================== 原模型PPL评估（可选） ====================
+    ppl_original = None
+    if args.test_original_ppl:
+        logger.log("\n" + "=" * 60)
+        logger.log("评估原始模型PPL（Baseline）")
+        logger.log("=" * 60)
+
+        model.eval()
+        logger.log(f"使用数据集: wikitext2, seq_len={args.eval_seq_len}")
+        ppl_original = PPLMetric(model, tokenizer, ['wikitext2'],
+                                seq_len=args.eval_seq_len, device=args.device)
+        logger.log(f"原始模型 PPL: {ppl_original}")
+
+        # 重新启用梯度（为后续剪枝准备）
+        for param in model.parameters():
+            param.requires_grad_(True)
+        model.train()
+
     # ==================== 步骤2: 评估层重要性 ====================
     if not args.skip_importance_analysis:
         logger.log("\n" + "=" * 60)
@@ -286,95 +312,120 @@ def main():
     logger.log("\n" + "=" * 60)
     logger.log("步骤4: GQA-Aware结构化剪枝")
     logger.log("=" * 60)
-    logger.log("使用GQA组级Taylor Importance，保持4:1 Q:KV比例\n")
 
-    # 准备样本数据用于计算梯度（复用已加载的数据，截断到64 token）
-    example_prompts = all_samples[:args.channel_importance_samples, :64].to(args.device)
-    logger.log(f"准备了 {args.channel_importance_samples} 个样本用于Taylor importance计算")
+    # 确定剪枝目标
+    prune_targets = []
+    if args.prune_attention:
+        prune_targets.append("Attention(GQA组级)")
+    if args.prune_mlp:
+        prune_targets.append("MLP")
 
-    # 确定要剪枝的层
-    pruning_layers = [i for i in range(args.layer_start, min(args.layer_end, num_layers))
-                     if layer_pruning_rates.get(i, 0.0) >= args.min_pruning_rate]
+    if not prune_targets:
+        logger.log("⚠️ 警告：未启用任何剪枝目标（--prune_attention 和 --prune_mlp 都为False）")
+        logger.log("跳过剪枝步骤\n")
+    else:
+        logger.log(f"剪枝目标: {', '.join(prune_targets)}")
+        logger.log("使用Taylor Importance，保持4:1 Q:KV比例\n")
 
-    logger.log(f"\n实际参与剪枝的层: {pruning_layers}")
-    logger.log(f"跳过的层（剪枝率<{args.min_pruning_rate}）: {[i for i in range(num_layers) if i not in pruning_layers]}\n")
+    # 只有在有剪枝目标时才执行剪枝
+    if prune_targets:
+        # 准备样本数据用于计算梯度（复用已加载的数据，截断到64 token）
+        example_prompts = all_samples[:args.channel_importance_samples, :64].to(args.device)
+        logger.log(f"准备了 {args.channel_importance_samples} 个样本用于Taylor importance计算")
 
-    # 记录已剪枝的层（用于禁用梯度计算）
-    pruned_layer_indices = []
+        # 确定要剪枝的层
+        pruning_layers = [i for i in range(args.layer_start, min(args.layer_end, num_layers))
+                         if layer_pruning_rates.get(i, 0.0) >= args.min_pruning_rate]
 
-    # 逐层剪枝
-    for layer_idx in pruning_layers:
-        rate = layer_pruning_rates[layer_idx]
-        logger.log(f"\n处理 Layer {layer_idx} (剪枝率: {rate:.2%})")
+        logger.log(f"\n实际参与剪枝的层: {pruning_layers}")
+        logger.log(f"跳过的层（剪枝率<{args.min_pruning_rate}）: {[i for i in range(num_layers) if i not in pruning_layers]}\n")
 
-        layer = model.model.layers[layer_idx]
+        # 记录已剪枝的层（用于禁用梯度计算）
+        pruned_layer_indices = []
 
-        # 禁用已剪枝层的梯度计算（避免形状不匹配）
-        for pruned_idx in pruned_layer_indices:
-            for param in model.model.layers[pruned_idx].parameters():
-                param.requires_grad = False
+        # 逐层剪枝
+        for layer_idx in pruning_layers:
+            rate = layer_pruning_rates[layer_idx]
+            logger.log(f"\n处理 Layer {layer_idx} (剪枝率: {rate:.2%})")
 
-        # 计算梯度
-        model.zero_grad()
-        loss = model(example_prompts, labels=example_prompts).loss
-        loss.backward()
+            layer = model.model.layers[layer_idx]
 
-        # 计算importance
-        group_imp = compute_gqa_group_importance(layer, args.head_dim, args.gqa_ratio)
+            # 禁用已剪枝层的梯度计算（避免形状不匹配）
+            for pruned_idx in pruned_layer_indices:
+                for param in model.model.layers[pruned_idx].parameters():
+                    param.requires_grad = False
 
-        if args.prune_mlp:
-            gate_salience = (layer.mlp.gate_proj.weight * layer.mlp.gate_proj.weight.grad).abs().sum(1)
-            up_salience = (layer.mlp.up_proj.weight * layer.mlp.up_proj.weight.grad).abs().sum(1)
-            down_salience = (layer.mlp.down_proj.weight * layer.mlp.down_proj.weight.grad).abs().sum(0)
-            mlp_importance = gate_salience + up_salience + down_salience
+            # 计算梯度（如果需要）
+            if args.prune_attention or args.prune_mlp:
+                model.zero_grad()
+                loss = model(example_prompts, labels=example_prompts).loss
+                loss.backward()
 
-        # Attention剪枝
-        num_kv_heads = len(group_imp)
-        num_groups_to_prune = int(num_kv_heads * rate)
-        target_num_kv_heads = max(1, num_kv_heads - num_groups_to_prune)
+            # 初始化默认值
+            num_q, num_kv = None, None
+            target_channels = None
 
-        keep_indices, _ = select_gqa_groups_to_prune(group_imp, target_num_kv_heads)
-        num_q, num_kv = prune_attention_by_gqa_groups(layer, keep_indices, args.head_dim, args.gqa_ratio)
+            # 计算 Attention importance（如果需要）
+            if args.prune_attention:
+                group_imp = compute_gqa_group_importance(layer, args.head_dim, args.gqa_ratio)
+                num_kv_heads = len(group_imp)
+                num_groups_to_prune = int(num_kv_heads * rate)
+                target_num_kv_heads = max(1, num_kv_heads - num_groups_to_prune)
 
-        # MLP剪枝
-        if args.prune_mlp:
-            num_channels = mlp_importance.shape[0]
-            num_channels_to_prune = int(num_channels * rate)
-            num_channels_to_prune = (num_channels_to_prune // args.head_dim) * args.head_dim
-            target_channels = max(args.head_dim, num_channels - num_channels_to_prune)
+                keep_indices, _ = select_gqa_groups_to_prune(group_imp, target_num_kv_heads)
+                num_q, num_kv = prune_attention_by_gqa_groups(layer, keep_indices, args.head_dim, args.gqa_ratio)
 
-            _, sorted_indices = torch.sort(mlp_importance, descending=True)
-            keep_indices_mlp = sorted(sorted_indices[:target_channels].tolist())
+            # 计算 MLP importance（如果需要）
+            if args.prune_mlp:
+                gate_salience = (layer.mlp.gate_proj.weight * layer.mlp.gate_proj.weight.grad).abs().sum(1)
+                up_salience = (layer.mlp.up_proj.weight * layer.mlp.up_proj.weight.grad).abs().sum(1)
+                down_salience = (layer.mlp.down_proj.weight * layer.mlp.down_proj.weight.grad).abs().sum(0)
+                mlp_importance = gate_salience + up_salience + down_salience
 
-            layer.mlp.gate_proj.weight.data = layer.mlp.gate_proj.weight.data[keep_indices_mlp, :]
-            layer.mlp.up_proj.weight.data = layer.mlp.up_proj.weight.data[keep_indices_mlp, :]
+                # 执行 MLP 剪枝
+                num_channels = mlp_importance.shape[0]
+                num_channels_to_prune = int(num_channels * rate)
+                num_channels_to_prune = (num_channels_to_prune // args.head_dim) * args.head_dim
+                target_channels = max(args.head_dim, num_channels - num_channels_to_prune)
 
-            if layer.mlp.gate_proj.bias is not None:
-                layer.mlp.gate_proj.bias.data = layer.mlp.gate_proj.bias.data[keep_indices_mlp]
-            if layer.mlp.up_proj.bias is not None:
-                layer.mlp.up_proj.bias.data = layer.mlp.up_proj.bias.data[keep_indices_mlp]
+                _, sorted_indices = torch.sort(mlp_importance, descending=True)
+                keep_indices_mlp = sorted(sorted_indices[:target_channels].tolist())
 
-            layer.mlp.down_proj.weight.data = layer.mlp.down_proj.weight.data[:, keep_indices_mlp]
+                layer.mlp.gate_proj.weight.data = layer.mlp.gate_proj.weight.data[keep_indices_mlp, :]
+                layer.mlp.up_proj.weight.data = layer.mlp.up_proj.weight.data[keep_indices_mlp, :]
 
-            layer.mlp.gate_proj.out_features = target_channels
-            layer.mlp.up_proj.out_features = target_channels
-            layer.mlp.down_proj.in_features = target_channels
+                if layer.mlp.gate_proj.bias is not None:
+                    layer.mlp.gate_proj.bias.data = layer.mlp.gate_proj.bias.data[keep_indices_mlp]
+                if layer.mlp.up_proj.bias is not None:
+                    layer.mlp.up_proj.bias.data = layer.mlp.up_proj.bias.data[keep_indices_mlp]
 
-            # 输出完整日志（Attention + MLP）
-            logger.log(f"  Attention: {32}Q:{8}KV → {num_q}Q:{num_kv}KV, MLP: {num_channels}→{target_channels}")
-        else:
-            # 仅输出 Attention
-            logger.log(f"  Attention: {32}Q:{8}KV → {num_q}Q:{num_kv}KV")
+                layer.mlp.down_proj.weight.data = layer.mlp.down_proj.weight.data[:, keep_indices_mlp]
 
-        # 清理
-        del loss
-        model.zero_grad()
-        for param in layer.parameters():
-            if param.grad is not None:
-                param.grad = None
-        torch.cuda.empty_cache()
+                layer.mlp.gate_proj.out_features = target_channels
+                layer.mlp.up_proj.out_features = target_channels
+                layer.mlp.down_proj.in_features = target_channels
 
-        pruned_layer_indices.append(layer_idx)
+            # 输出日志（根据剪枝模式）
+            log_parts = []
+            if args.prune_attention:
+                log_parts.append(f"Attention: {32}Q:{8}KV → {num_q}Q:{num_kv}KV")
+            if args.prune_mlp:
+                log_parts.append(f"MLP: {mlp_importance.shape[0]}→{target_channels}")
+
+            if log_parts:
+                logger.log(f"  {', '.join(log_parts)}")
+            else:
+                logger.log(f"  ⚠️ 未剪枝任何组件（--prune_attention 和 --prune_mlp 都未启用）")
+
+            # 清理
+            if args.prune_attention or args.prune_mlp:
+                model.zero_grad()
+                for param in layer.parameters():
+                    if param.grad is not None:
+                        param.grad = None
+            torch.cuda.empty_cache()
+
+            pruned_layer_indices.append(layer_idx)
 
     # ==================== 步骤5: 保存模型 ====================
     logger.log("\n" + "=" * 60)
@@ -455,8 +506,9 @@ def main():
         model.to(args.device)
         model.eval()
 
+        logger.log(f"使用数据集: wikitext2, seq_len={args.eval_seq_len}")
         ppl_before_finetune = PPLMetric(model, tokenizer, ['wikitext2'],
-                       seq_len=args.taylor_seq_len, device=args.device)
+                       seq_len=args.eval_seq_len, device=args.device)
         logger.log(f"\n剪枝后 PPL: {ppl_before_finetune}")
     else:
         logger.log("\n⚠️ 未启用 --test_after_prune，跳过PPL评估")
@@ -527,25 +579,41 @@ def main():
         model.to(args.device)
         model.eval()
 
+        logger.log(f"使用数据集: wikitext2, seq_len={args.eval_seq_len}")
         ppl_after_finetune = PPLMetric(model, tokenizer, ['wikitext2'],
-                                       seq_len=args.taylor_seq_len, device=args.device)
+                                       seq_len=args.eval_seq_len, device=args.device)
         logger.log(f"\n微调后 PPL: {ppl_after_finetune}")
 
         # 对比剪枝前后和微调前后的变化
         logger.log("\n" + "=" * 60)
         logger.log("性能对比总结")
         logger.log("=" * 60)
+
+        # 显示原模型PPL（如果测量了）
+        if ppl_original:
+            logger.log(f"原始模型: {ppl_original}")
+
+        # 显示剪枝后和微调后的对比
         if ppl_before_finetune:
             logger.log(f"剪枝后（微调前）: {ppl_before_finetune}")
             logger.log(f"微调后: {ppl_after_finetune}")
 
             # 计算改善百分比
             wikitext_key = 'wikitext2 (wikitext-2-raw-v1)'
-            if wikitext_key in ppl_before_finetune and wikitext_key in ppl_after_finetune:
-                before_val = ppl_before_finetune[wikitext_key]
+            if wikitext_key in ppl_after_finetune:
                 after_val = ppl_after_finetune[wikitext_key]
-                improvement = (before_val - after_val) / before_val * 100
-                logger.log(f"PPL 改善: {improvement:.2f}%")
+
+                # 相对于剪枝后的改善
+                if wikitext_key in ppl_before_finetune:
+                    before_val = ppl_before_finetune[wikitext_key]
+                    improvement = (before_val - after_val) / before_val * 100
+                    logger.log(f"微调改善（vs剪枝后）: {improvement:.2f}%")
+
+                # 相对于原模型的退化（如果有原模型数据）
+                if ppl_original and wikitext_key in ppl_original:
+                    original_val = ppl_original[wikitext_key]
+                    degradation = (after_val - original_val) / original_val * 100
+                    logger.log(f"相对原模型退化: {degradation:+.2f}%")
 
     logger.log("\n" + "=" * 60)
     logger.log("✅ 完整流程完成！")

@@ -15,6 +15,8 @@ GQA（Grouped Query Attention）感知的 LLaMA-3 模型剪枝工具
 
 ### 1. 剪枝模型
 
+#### 剪枝 Attention 和 MLP（推荐）
+
 ```bash
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
@@ -24,13 +26,37 @@ python llama3_unbalanced_pruning_gqa_aware.py \
     --save_model
 ```
 
+#### 只剪枝 MLP（保留Attention）
+
+```bash
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name llama3_mlp_only_25pct \
+    --pruning_ratio 0.25 \
+    --no_prune_attention \
+    --prune_mlp \
+    --save_model
+```
+
+#### 只剪枝 Attention（保留MLP）
+
+```bash
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name llama3_attn_only_25pct \
+    --pruning_ratio 0.25 \
+    --save_model
+```
+
 **关键参数**：
 - `--base_model`: 原始模型路径
 - `--pruning_ratio`: 剪枝率（0.25 = 剪掉25%参数）
-- `--prune_mlp`: 同时剪枝 MLP 层
+- `--prune_attention`: 是否剪枝Attention层（默认True）
+- `--no_prune_attention`: 禁用Attention剪枝（用于只剪MLP）
+- `--prune_mlp`: 是否剪枝MLP层（默认False）
 - `--save_model`: 保存剪枝后的模型
 
-**输出**：`prune_log/llama3_pruned_25pct/pytorch_model.bin`
+**输出**：`prune_log/{experiment_name}/pytorch_model.bin`
 
 ---
 
@@ -70,6 +96,8 @@ python test_finetuning.py \
 
 ### 3. 评估对比
 
+#### 方法A：使用独立评估脚本
+
 ```bash
 python evaluate_models.py \
     --original_model /newdata/LLMs/Llama-3-8B-Instruct \
@@ -85,6 +113,29 @@ python evaluate_models.py \
 - `--finetuned_model`: 微调后模型（可选）
 - `--seq_len`: 评估序列长度（应与训练一致）
 - `--save_results`: 保存结果到 JSON
+
+#### 方法B：在主脚本中测量原模型PPL（推荐）
+
+```bash
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name experiment_with_baseline \
+    --pruning_ratio 0.25 \
+    --prune_mlp \
+    --test_original_ppl \
+    --test_after_prune \
+    --eval_seq_len 512 \
+    --save_model \
+    --finetune \
+    --finetune_method lora
+```
+
+**新增参数**：
+- `--test_original_ppl`: 剪枝前评估原模型PPL（作为baseline）
+- `--eval_seq_len`: PPL评估时的序列长度（默认128，建议与微调seq_len一致）
+- `--test_after_prune`: 剪枝后评估PPL（可对比原模型和微调后）
+
+**优势**：一次运行即可得到完整的 原模型→剪枝后→微调后 的PPL对比
 
 **输出示例**：
 ```
@@ -161,6 +212,40 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 ---
 
 ## 常用参数组合
+
+### 对比不同剪枝目标（推荐实验）
+
+```bash
+# 实验1: 只剪枝 Attention
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name compare_attn_only \
+    --pruning_ratio 0.25 \
+    --test_original_ppl \
+    --test_after_prune \
+    --save_model
+
+# 实验2: 只剪枝 MLP
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name compare_mlp_only \
+    --pruning_ratio 0.25 \
+    --no_prune_attention \
+    --prune_mlp \
+    --test_original_ppl \
+    --test_after_prune \
+    --save_model
+
+# 实验3: 同时剪枝 Attention + MLP
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name compare_both \
+    --pruning_ratio 0.25 \
+    --prune_mlp \
+    --test_original_ppl \
+    --test_after_prune \
+    --save_model
+```
 
 ### 快速测试（Debug）
 
