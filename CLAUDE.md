@@ -55,13 +55,16 @@ GAQ-Aware-Prune/
 ├── gqa_aware_pruning.py                      # Core GQA-aware pruning logic
 └── LLMPruner/                                # Utility modules
     ├── __init__.py
+    ├── README.md                             # Module documentation
     ├── utils/
     │   ├── logger.py                         # Logging with directory management
     │   └── get_best_gpu.py                   # GPU selection utility
     ├── evaluator/
-    │   └── ppl.py                            # Perplexity evaluation (external)
+    │   ├── __init__.py
+    │   └── ppl.py                            # Perplexity evaluation (NOW IMPLEMENTED)
     └── datasets/
-        └── example_samples.py                # Dataset loading utilities (external)
+        ├── __init__.py
+        └── example_samples.py                # Dataset loading utilities (NOW IMPLEMENTED)
 ```
 
 ### File Purposes
@@ -757,33 +760,77 @@ This project implements techniques from:
 - **Taylor Importance**: Molchanov et al., "Pruning Convolutional Neural Networks for Resource Efficient Inference"
 - **Structured Pruning**: LLM-Pruner (Ma et al., 2023)
 
-### External Dependencies
+### LLMPruner Module Implementation
 
-The code references but does not include:
-- `LLMPruner.evaluator.ppl.PPLMetric`: Perplexity evaluation utility
-- `LLMPruner.datasets.example_samples.get_examples`: Sample data loader
+**✅ FULLY IMPLEMENTED** - All required modules are now available in `LLMPruner/`:
 
-**Note**: These are assumed to be from the LLM-Pruner repository. If missing, implement:
+#### 1. Perplexity Evaluation (`LLMPruner/evaluator/ppl.py`)
 
 ```python
-# Minimal PPLMetric implementation
-def PPLMetric(model, tokenizer, datasets, seq_len=128, device='cuda'):
-    from datasets import load_dataset
-    results = {}
-    for ds_name in datasets:
-        dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
-        # Compute perplexity...
-        results[ds_name] = ppl
-    return results
+from LLMPruner.evaluator.ppl import PPLMetric
 
-# Minimal get_examples implementation
-def get_examples(dataset_name, tokenizer, num_samples, seq_len):
-    from datasets import load_dataset
-    dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
-    texts = [item['text'] for item in dataset if len(item['text']) > 50][:num_samples]
-    inputs = tokenizer(texts, return_tensors='pt', truncation=True, max_length=seq_len, padding=True)
-    return inputs['input_ids']
+# Evaluate on multiple datasets
+ppl_metric = PPLMetric(
+    model, tokenizer,
+    datasets=['wikitext2', 'ptb'],
+    seq_len=128,
+    device='cuda'
+)
+
+# Access results
+print(ppl_metric)  # Print all results
+wikitext_ppl = ppl_metric['wikitext2 (wikitext-2-raw-v1)']
+ptb_ppl = ppl_metric.get('ptb', 'N/A')
 ```
+
+**Features**:
+- Supports multiple datasets: wikitext2, wikitext103, ptb, c4
+- Uses sliding window for efficient computation
+- Returns dict-like object with dataset names as keys
+- Automatic progress tracking with tqdm
+
+#### 2. Sample Data Loading (`LLMPruner/datasets/example_samples.py`)
+
+```python
+from LLMPruner.datasets.example_samples import get_examples
+
+# Load samples for gradient computation
+examples = get_examples(
+    'wikitext',
+    tokenizer,
+    num_samples=10,
+    seq_len=64
+).to('cuda')
+
+# Use in pruning
+loss = model(examples, labels=examples).loss
+loss.backward()
+```
+
+**Features**:
+- Supports wikitext, wikitext103, c4, ptb datasets
+- Returns tokenized tensors ready for model input
+- Automatic padding and truncation
+- Filters out short/empty texts
+
+#### 3. Utilities
+
+```python
+# Logging with hierarchical structure
+from LLMPruner.utils.logger import LoggerWithDepth
+
+logger = LoggerWithDepth(
+    env_name='my_experiment',
+    config={'lr': 0.001},
+    root_dir='logs'
+)
+
+# Auto-select best GPU
+from LLMPruner.utils.get_best_gpu import get_best_gpu
+device = f'cuda:{get_best_gpu()}'
+```
+
+**For detailed usage**, see `LLMPruner/README.md`
 
 ---
 
