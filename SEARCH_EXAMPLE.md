@@ -163,8 +163,7 @@ python search_optimal_distribution.py \
     --freeze_range 0,1,2,3,4,5,6,8 \
     --coarse_start_ratio 2:8 \
     --layer_importance_method removal \
-    --pruning_strategy inverse \
-    --prune_mlp
+    --pruning_strategy inverse
 ```
 
 ### 6. 加速测试（减少样本数）

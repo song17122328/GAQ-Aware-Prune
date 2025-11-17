@@ -122,6 +122,12 @@ class PPLSearcher:
                 timeout=3600  # 1小时超时
             )
 
+            # 检查返回码
+            if result.returncode != 0:
+                self.log(f"❌ 剪枝脚本返回错误码: {result.returncode}")
+                self.log(f"STDERR: {result.stderr[:500]}")  # 显示前500字符
+                return None
+
             # 从输出中提取PPL
             ppl = self._extract_ppl_from_output(result.stdout)
 
@@ -135,6 +141,7 @@ class PPLSearcher:
                 return ppl
             else:
                 self.log(f"❌ 无法从输出中提取PPL")
+                self.log(f"最后100行输出: {result.stdout[-1000:]}")
                 return None
 
         except subprocess.TimeoutExpired:
@@ -622,7 +629,7 @@ def main():
        --freeze_range 0,1,2,3,4,5,6,8 \\
        --coarse_start_ratio 2:8 \\
        --layer_importance_method removal \\
-       --prune_mlp
+       --pruning_strategy inverse
 
 6. 固定冻结层数（非搜索模式）:
    python search_optimal_distribution.py \\
@@ -673,8 +680,6 @@ def main():
     parser.add_argument('--pruning_strategy', type=str, default=None,
                        choices=['inverse', 'proportional', 'uniform'],
                        help='剪枝策略')
-    parser.add_argument('--prune_mlp', action='store_true',
-                       help='是否剪枝MLP（默认只剪Attention）')
 
     args = parser.parse_args()
 
@@ -697,8 +702,6 @@ def main():
         extra_args.extend(['--layer_importance_method', args.layer_importance_method])
     if args.pruning_strategy is not None:
         extra_args.extend(['--pruning_strategy', args.pruning_strategy])
-    if args.prune_mlp:
-        extra_args.append('--prune_mlp')
 
     # 创建搜索器
     searcher = PPLSearcher(
