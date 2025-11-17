@@ -596,11 +596,11 @@ def main():
             logger.log(f"   ⚠️  修正后的 MLP 剪枝量超过总量，设为 {total_mlp_params:,}")
             mlp_pruned_params_adjusted = total_mlp_params
 
-        # 重新计算MLP层级剪枝率
-        if mlp_pruned_params_adjusted > 0:
-            logger.log(f"\n4. 重新计算 MLP 各层剪枝率:")
-            mlp_layer_pruning_rates = calculator.compute_layer_pruning_rates_by_target_params(
-                layer_param_counts=mlp_param_counts,
+        # 重新计算MLP层级剪枝率（仅对未冻结层）
+        if mlp_pruned_params_adjusted > 0 and len(mlp_param_counts_unfrozen) > 0:
+            logger.log(f"\n4. 重新计算 MLP 各层剪枝率（仅未冻结层）:")
+            mlp_layer_pruning_rates_unfrozen = calculator.compute_layer_pruning_rates_by_target_params(
+                layer_param_counts=mlp_param_counts_unfrozen,  # 只计算未冻结层
                 target_total_pruned_params=mlp_pruned_params_adjusted,
                 strategy=args.pruning_strategy,
                 alpha=args.layer_importance_weight,
@@ -608,10 +608,13 @@ def main():
                 max_rate=args.max_pruning_rate,
                 use_log_transform=True
             )
-            logger.log(f"   ✅ MLP 层级剪枝率已根据修正后的目标量重新计算")
+            # 为所有层创建剪枝率字典，冻结层设为0
+            mlp_layer_pruning_rates = {i: 0.0 for i in mlp_param_counts.keys()}
+            mlp_layer_pruning_rates.update(mlp_layer_pruning_rates_unfrozen)
+            logger.log(f"   ✅ MLP 层级剪枝率已根据修正后的目标量重新计算（冻结层剪枝率=0）")
         else:
             mlp_layer_pruning_rates = {i: 0.0 for i in mlp_param_counts.keys()}
-            logger.log(f"   MLP 剪枝量为 0，所有层剪枝率设为 0")
+            logger.log(f"   MLP 剪枝量为 0 或无未冻结层，所有层剪枝率设为 0")
 
         # 更新Attention剪枝率为离散化后的值
         attn_layer_pruning_rates = attn_layer_pruning_rates_discretized

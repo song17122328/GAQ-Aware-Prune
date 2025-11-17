@@ -102,6 +102,7 @@ class PPLSearcher:
             "--pruning_distribution", ratio_str,
             "--save_ckpt_log_name", f"{self.save_ckpt_log_name}_ratio_{ratio_str.replace(':', '_')}_freeze_{freeze_layers}",
             "--test_after_prune",
+            "--save_model",  # 保存剪枝后的模型，用于二次测试
         ]
 
         # 添加冻结层数参数
