@@ -23,7 +23,12 @@ class FineTuner:
         tokenizer,
         device: str = 'cuda',
         logger = None,
-        use_lora: bool = False
+        use_lora: bool = False,
+        lora_r: int = 8,
+        lora_alpha: int = 16,
+        lora_dropout: float = 0.05,
+        lora_target_attention: bool = True,
+        lora_target_mlp: bool = True
     ):
         """
         初始化微调器
@@ -34,6 +39,11 @@ class FineTuner:
             device: 设备
             logger: 日志记录器（可选）
             use_lora: 是否使用LoRA微调（默认False，使用全参数微调）
+            lora_r: LoRA秩（默认8）
+            lora_alpha: LoRA缩放系数（默认16）
+            lora_dropout: LoRA dropout率（默认0.05）
+            lora_target_attention: 是否对Attention层应用LoRA（默认True）
+            lora_target_mlp: 是否对MLP层应用LoRA（默认True）
         """
         self.model = model
         self.tokenizer = tokenizer
@@ -41,6 +51,13 @@ class FineTuner:
         self.logger = logger
         self.use_lora = use_lora
         self.lora_config = None
+
+        # 存储 LoRA 配置参数
+        self.lora_r = lora_r
+        self.lora_alpha = lora_alpha
+        self.lora_dropout = lora_dropout
+        self.lora_target_attention = lora_target_attention
+        self.lora_target_mlp = lora_target_mlp
 
     def log(self, message: str):
         """记录日志"""
