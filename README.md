@@ -631,23 +631,28 @@ python test_finetuning.py \
 
 ```bash
 # 基本搜索（两阶段：分布优化）
-python search_optimal_distribution.py \
+/data/home/yuanxiaosong/miniconda3/bin/python search_optimal_distribution.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --python_path /home/user/miniconda3/bin/python
+    --python_path /data/home/yuanxiaosong/miniconda3/bin/python
 
 # 三阶段搜索（分布+冻结层优化）
-python search_optimal_distribution.py \
+/data/home/yuanxiaosong/miniconda3/bin/python search_optimal_distribution.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --python_path /home/user/miniconda3/bin/python \
+    --python_path /data/home/yuanxiaosong/miniconda3/bin/python \
     --search_freeze_layers \
     --freeze_range 0,1,2,3,4,5,6,8
 
 # 自定义起点和剪枝率
-python search_optimal_distribution.py \
+/data/home/yuanxiaosong/miniconda3/bin/python search_optimal_distribution.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --python_path /home/user/miniconda3/bin/python \
+    --python_path /data/home/yuanxiaosong/miniconda3/bin/python \
     --pruning_ratio 0.30 \
     --coarse_start_ratio 3:7
+
+# 使用相对路径和环境变量（如果已激活conda环境）
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --python_path $(which python)
 ```
 
 ---
