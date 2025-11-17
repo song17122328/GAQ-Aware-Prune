@@ -14,66 +14,148 @@ GQA（Grouped Query Attention）感知的 LLaMA-3 模型剪枝工具
 
 ## 快速开始
 
-### 1. 剪枝模型
+### 1. 对比不同剪枝分布（推荐：找到最佳比例）
 
-#### 基于参数量分布的智能剪枝（推荐）
+**第一步：测试不同的 Attention:MLP 剪枝比例**
 
-使用 `--pruning_distribution` 参数精确控制 Attention 和 MLP 的剪枝比例：
+> **重要**：使用 `--test_original_ppl` 和 `--test_after_prune` 来测量 PPL，对比不同分布的效果
 
 ```bash
-# 均衡剪枝（Attention:MLP = 5:5）
+# 实验1: 均衡剪枝（Attention:MLP = 5:5，x+y=10）
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --save_ckpt_log_name llama3_pruned_balanced \
+    --save_ckpt_log_name dist_5_5 \
     --pruning_ratio 0.25 \
     --pruning_distribution 5:5 \
+    --test_original_ppl \
+    --test_after_prune \
     --save_model
 
-# 只剪枝 MLP（Attention:MLP = 0:10）
+# 实验2: 根据实际参数量分布（Attention:MLP = 2:8）
+# LLaMA-3-8B 的 Attention 约占 19.2%，MLP 约占 80.8%
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --save_ckpt_log_name llama3_mlp_only \
+    --save_ckpt_log_name dist_2_8 \
     --pruning_ratio 0.25 \
-    --pruning_distribution 0:10 \
+    --pruning_distribution 2:8 \
+    --test_original_ppl \
+    --test_after_prune \
     --save_model
 
-# 只剪枝 Attention（Attention:MLP = 10:0）
+# 实验3: MLP 占主导（Attention:MLP = 3:7）
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --save_ckpt_log_name llama3_attn_only \
+    --save_ckpt_log_name dist_3_7 \
     --pruning_ratio 0.25 \
-    --pruning_distribution 10:0 \
+    --pruning_distribution 3:7 \
+    --test_original_ppl \
+    --test_after_prune \
     --save_model
 
-# Attention 占主导（Attention:MLP = 7:3）
+# 实验4: Attention 占主导（Attention:MLP = 7:3）
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --save_ckpt_log_name llama3_attn_heavy \
+    --save_ckpt_log_name dist_7_3 \
     --pruning_ratio 0.25 \
     --pruning_distribution 7:3 \
+    --test_original_ppl \
+    --test_after_prune \
+    --save_model
+
+# 实验5: 只剪枝 MLP（Attention:MLP = 0:10）
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name dist_0_10 \
+    --pruning_ratio 0.25 \
+    --pruning_distribution 0:10 \
+    --test_original_ppl \
+    --test_after_prune \
+    --save_model
+
+# 实验6: 只剪枝 Attention（Attention:MLP = 10:0）
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name dist_10_0 \
+    --pruning_ratio 0.25 \
+    --pruning_distribution 10:0 \
+    --test_original_ppl \
+    --test_after_prune \
     --save_model
 ```
 
+**第二步：对比 PPL 结果**
+
+查看日志文件对比各实验的 PPL：
+```bash
+# 查看所有实验的 PPL（从日志中提取）
+for exp in dist_5_5 dist_2_8 dist_3_7 dist_7_3 dist_0_10 dist_10_0; do
+    echo "=== $exp ==="
+    grep "原始模型 PPL\|剪枝后 PPL" prune_log/$exp/*/training.log | head -2
+done
+```
+
+**第三步：选择最佳分布并微调**
+
+根据 PPL 对比结果，选择最佳分布进行微调：
+```bash
+# 假设 dist_2_8 效果最好
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name best_dist_2_8_finetuned \
+    --pruning_ratio 0.25 \
+    --pruning_distribution 2:8 \
+    --test_original_ppl \
+    --test_after_prune \
+    --save_model \
+    --finetune \
+    --finetune_method lora \
+    --finetune_lr 2e-4 \
+    --finetune_epochs 3 \
+    --finetune_samples 1000 \
+    --finetune_seq_len 512
+```
+
 **工作原理**：
-- `--pruning_distribution x:y` 表示 Attention 和 MLP **实际剪掉的参数量之比**
-- 例如：`--pruning_ratio 0.25 --pruning_distribution 5:5`
-  - 假设总参数量 N，Attention 参数量 0.4N，MLP 参数量 0.6N
-  - 总剪枝量 = 0.25N
-  - Attention 剪枝量 = 0.25N × 5/10 = 0.125N（约占 Attention 的 31%）
-  - MLP 剪枝量 = 0.25N × 5/10 = 0.125N（约占 MLP 的 21%）
+- `--pruning_distribution x:y` 表示 Attention 和 MLP **实际剪掉的参数量之比**（x+y=10）
+- 例如：`--pruning_ratio 0.25 --pruning_distribution 2:8`
+  - LLaMA-3-8B: Attention 占 19.2%，MLP 占 80.8%
+  - 总剪枝量 = Attention+MLP 的 25%
+  - Attention 剪枝量 = 总剪枝量 × 2/10 = 20%
+  - MLP 剪枝量 = 总剪枝量 × 8/10 = 80%
 - 脚本会自动根据层重要性分配每层的剪枝率
 
 **关键参数**：
 - `--base_model`: 原始模型路径
-- `--pruning_ratio`: 总体剪枝率（0.25 = 剪掉总参数的25%）
-- `--pruning_distribution`: Attention和MLP的剪枝参数量比例（x:y 格式）
+- `--pruning_ratio`: 总体剪枝率（0.25 = 剪掉 Attention+MLP 总参数的 25%）
+- `--pruning_distribution`: Attention:MLP 的剪枝参数量比例（x:y 格式，x+y=10）
+- `--test_original_ppl`: 评估原始模型 PPL（作为 baseline）
+- `--test_after_prune`: 评估剪枝后 PPL（对比不同分布）
 - `--save_model`: 保存剪枝后的模型
 
-**输出**：`prune_log/{experiment_name}/pytorch_model.bin`
+**输出**：
+- 剪枝模型：`prune_log/{experiment_name}/pytorch_model.bin`
+- 详细日志：`prune_log/{experiment_name}/{timestamp}/training.log`
+- 剪枝配置：`prune_log/{experiment_name}/pruning_strategy_config.json`
 
 ---
 
-### 2. LoRA 微调
+### 2. 剪枝模型（不测试 PPL）
+
+如果已知最佳分布，可以直接剪枝：
+
+```bash
+# 使用最佳分布 2:8 进行剪枝
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name llama3_pruned_2_8 \
+    --pruning_ratio 0.25 \
+    --pruning_distribution 2:8 \
+    --save_model
+```
+
+---
+
+### 3. LoRA 微调
 
 ```bash
 python test_finetuning.py \
@@ -202,59 +284,61 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 
 ## 常用参数组合
 
-### 对比不同剪枝分布（推荐实验）
+### 批量对比不同剪枝分布（Shell脚本）
+
+使用 Shell 脚本自动化对比不同分布：
 
 ```bash
-# 实验1: 只剪枝 Attention
-python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --save_ckpt_log_name compare_attn_only \
-    --pruning_ratio 0.25 \
-    --pruning_distribution 10:0 \
-    --test_original_ppl \
-    --test_after_prune \
-    --save_model
+#!/bin/bash
+# 对比不同的 Attention:MLP 剪枝分布（x+y=10）
 
-# 实验2: 只剪枝 MLP
-python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --save_ckpt_log_name compare_mlp_only \
-    --pruning_ratio 0.25 \
-    --pruning_distribution 0:10 \
-    --test_original_ppl \
-    --test_after_prune \
-    --save_model
+MODEL_PATH="/newdata/LLMs/Llama-3-8B-Instruct"
+PRUNING_RATIO=0.25
 
-# 实验3: 均衡剪枝
-python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --save_ckpt_log_name compare_balanced \
-    --pruning_ratio 0.25 \
-    --pruning_distribution 5:5 \
-    --test_original_ppl \
-    --test_after_prune \
-    --save_model
+# 定义要测试的分布
+distributions=("10:0" "7:3" "5:5" "3:7" "2:8" "0:10")
 
-# 实验4: Attention占主导（7:3）
-python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --save_ckpt_log_name compare_attn_heavy \
-    --pruning_ratio 0.25 \
-    --pruning_distribution 7:3 \
-    --test_original_ppl \
-    --test_after_prune \
-    --save_model
+for dist in "${distributions[@]}"; do
+    # 将 : 替换为 _ 作为实验名称
+    exp_name="dist_${dist//:/_}"
 
-# 实验5: MLP占主导（3:7）
-python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --save_ckpt_log_name compare_mlp_heavy \
-    --pruning_ratio 0.25 \
-    --pruning_distribution 3:7 \
-    --test_original_ppl \
-    --test_after_prune \
-    --save_model
+    echo "====================================="
+    echo "Running experiment: $exp_name"
+    echo "Distribution: $dist"
+    echo "====================================="
+
+    python llama3_unbalanced_pruning_gqa_aware.py \
+        --base_model $MODEL_PATH \
+        --save_ckpt_log_name $exp_name \
+        --pruning_ratio $PRUNING_RATIO \
+        --pruning_distribution $dist \
+        --test_original_ppl \
+        --test_after_prune \
+        --save_model
+done
+
+# 汇总所有实验的 PPL 结果
+echo ""
+echo "====================================="
+echo "PPL Summary"
+echo "====================================="
+for dist in "${distributions[@]}"; do
+    exp_name="dist_${dist//:/_}"
+    echo ""
+    echo "=== $exp_name (Attention:MLP = $dist) ==="
+    grep "原始模型 PPL\|剪枝后 PPL" prune_log/$exp_name/*/training.log | head -2
+done
 ```
+
+**推荐的测试分布**（x+y=10）：
+| 分布 | Attention | MLP | 说明 |
+|------|-----------|-----|------|
+| 10:0 | 100% | 0% | 只剪 Attention，保留所有 MLP |
+| 7:3 | 70% | 30% | Attention 占主导 |
+| 5:5 | 50% | 50% | 均衡剪枝 |
+| 3:7 | 30% | 70% | MLP 占主导 |
+| 2:8 | 20% | 80% | 根据 LLaMA-3 实际参数量分布 |
+| 0:10 | 0% | 100% | 只剪 MLP，保留所有 Attention |
 
 ### 快速测试（Debug）
 
@@ -385,12 +469,17 @@ MLP 总参数量: 805,306,368 (60.0%)
 
 | 场景 | pruning_ratio | pruning_distribution | 说明 |
 |------|---------------|----------------------|------|
-| 探索最佳分布 | 0.25 | 5:5, 7:3, 3:7 | 对比不同分布找最优 |
-| Attention优先 | 0.25 | 8:2 | 更多保留MLP |
-| MLP优先 | 0.25 | 2:8 | 更多保留Attention |
-| 极端测试 | 0.25 | 10:0 或 0:10 | 只剪枝一个组件 |
-| 激进剪枝 | 0.40 | 5:5 | 高剪枝率 |
-| 保守剪枝 | 0.15 | 5:5 | 低剪枝率 |
+| **推荐：根据模型实际分布** | 0.25 | **2:8** | LLaMA-3-8B 实际参数量分布（Attention 19.2%, MLP 80.8%） |
+| 探索最佳分布 | 0.25 | 5:5, 7:3, 3:7, 2:8 | 对比不同分布找最优 |
+| MLP 占主导 | 0.25 | 2:8 或 3:7 | 更多保留 Attention |
+| 均衡剪枝 | 0.25 | 5:5 | Attention 和 MLP 剪掉相同参数量 |
+| Attention 占主导 | 0.25 | 7:3 或 8:2 | 更多保留 MLP |
+| 极端测试：只剪 MLP | 0.25 | 0:10 | 保留所有 Attention |
+| 极端测试：只剪 Attention | 0.25 | 10:0 | 保留所有 MLP |
+| 激进剪枝 | 0.40 | 2:8 | 高剪枝率 |
+| 保守剪枝 | 0.15 | 2:8 | 低剪枝率 |
+
+**注意**：所有分布 x:y 满足 x+y=10
 
 ---
 
@@ -398,9 +487,11 @@ MLP 总参数量: 805,306,368 (60.0%)
 
 ### Q1: 如何选择 pruning_distribution？
 
-**建议**：先运行多个实验对比：
+**建议**：先运行多个实验对比不同分布的 PPL：
+
 ```bash
-for dist in "10:0" "7:3" "5:5" "3:7" "0:10"; do
+# 推荐测试 6 种分布（x+y=10）
+for dist in "10:0" "7:3" "5:5" "3:7" "2:8" "0:10"; do
     python llama3_unbalanced_pruning_gqa_aware.py \
         --base_model /newdata/LLMs/Llama-3-8B-Instruct \
         --save_ckpt_log_name dist_${dist//:/_} \
@@ -410,17 +501,42 @@ for dist in "10:0" "7:3" "5:5" "3:7" "0:10"; do
         --test_after_prune \
         --save_model
 done
+
+# 查看结果对比
+for dist in "10:0" "7:3" "5:5" "3:7" "2:8" "0:10"; do
+    echo "=== Attention:MLP = $dist ==="
+    grep "剪枝后 PPL" prune_log/dist_${dist//:/_}/*/training.log
+done
 ```
+
+**特别推荐**：2:8 分布与 LLaMA-3-8B 的实际参数量分布接近（Attention 19.2%, MLP 80.8%）
 
 ### Q2: pruning_distribution 和实际剪枝率的关系？
 
-- `pruning_distribution` 控制的是**参数量**的分配，不是剪枝率
-- 例如：5:5 表示 Attention 和 MLP 各剪掉相同数量的参数
-- 但由于 Attention 和 MLP 的总参数量不同，实际的剪枝率会不同
+- `pruning_distribution x:y` 控制的是**参数量**的分配比例（x+y=10）
+- 例如：`--pruning_distribution 2:8` 表示：
+  - Attention 剪掉的参数量 = 总剪枝量 × 2/10 = 20%
+  - MLP 剪掉的参数量 = 总剪枝量 × 8/10 = 80%
+- 由于 Attention 和 MLP 的总参数量不同，实际的剪枝率也不同：
+  - 如果 Attention 占 19.2%，MLP 占 80.8%
+  - 使用 2:8 分布时：
+    - Attention 剪枝率 ≈ 26%
+    - MLP 剪枝率 ≈ 25%
 
-### Q3: 如何复现某个实验？
+### Q3: 为什么推荐 2:8 分布？
 
-所有配置都保存在 `pruning_strategy_config.json`，可以查看详细参数。
+对于 LLaMA-3-8B：
+- Attention 参数量约占 19.2%
+- MLP 参数量约占 80.8%
+- 使用 2:8 分布时，Attention 和 MLP 的剪枝率接近，更加均衡
+
+### Q4: 如何复现某个实验？
+
+所有配置都保存在 `pruning_strategy_config.json`，包括：
+- 各层的 Attention 和 MLP 剪枝率
+- 层重要性分数
+- 剪枝分布比例
+- 总参数量和剪枝参数量
 
 ---
 
