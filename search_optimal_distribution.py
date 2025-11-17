@@ -155,9 +155,14 @@ class PPLSearcher:
         """从脚本输出中提取PPL值"""
         # 查找 "剪枝后 PPL:" 或类似的模式
         patterns = [
+            # 格式1: "✓ wikitext2 (wikitext-2-raw-v1): PPL = 83.77"
+            r"wikitext2[^:]*:\s*PPL\s*=\s*([\d.]+)",
+            # 格式2: "剪枝后 PPL: wikitext2 (wikitext-2-raw-v1): 83.77"
+            r"剪枝后\s+PPL:\s*wikitext2[^:]*:\s*([\d.]+)",
+            # 格式3: 旧格式（字典） "剪枝后 PPL: {'wikitext2...': 83.77}"
             r"剪枝后\s+PPL:\s*\{[^}]*'wikitext2[^']*':\s*([\d.]+)",
+            # 格式4: 通用回退
             r"wikitext2[^:]*:\s*([\d.]+)",
-            r"PPL.*?:\s*([\d.]+)",
         ]
 
         for pattern in patterns:
