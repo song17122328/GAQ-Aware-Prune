@@ -172,7 +172,7 @@ python llama3_unbalanced_pruning_gqa_aware.py \
     --pruning_ratio 0.25 \
     --layer_start 10 \
     --layer_end 15 \
-    --importance_samples 10
+    --layer_importance_samples 10
 
 # 微调测试（少量样本）
 python test_finetuning.py \
@@ -194,8 +194,8 @@ python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name production \
     --pruning_ratio 0.25 \
-    --importance_method removal \
-    --importance_samples 50 \
+    --layer_importance_method removal \
+    --layer_importance_samples 50 \
     --pruning_strategy inverse \
     --prune_mlp \
     --save_model
@@ -366,7 +366,7 @@ python llama3_unbalanced_pruning_gqa_aware.py \
     --save_ckpt_log_name exp2 \
     --pruning_ratio 0.30 \
     --skip_importance_analysis \
-    --importance_config prune_log/cache_importance/layer_importance_config.json \
+    --layer_importance_config prune_log/cache_importance/layer_importance_config.json \
     --save_model
 ```
 

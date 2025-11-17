@@ -8,7 +8,7 @@
 
 ### 1️⃣ 层重要性评估参数
 
-#### `--importance_samples` (默认: 50)
+#### `--layer_importance_samples` (默认: 50)
 
 **作用**: 用于评估**每一层的整体重要性**
 
@@ -42,7 +42,7 @@
 
 ### 2️⃣ Taylor 重要性计算参数
 
-#### `--num_examples` (默认: 10)
+#### `--channel_importance_samples` (默认: 10)
 
 **作用**: 用于计算**层内每个 GQA 组的重要性**
 
@@ -81,8 +81,8 @@
 
 | 参数 | 推荐值 | 原因 |
 |------|--------|------|
-| `--importance_samples` | **更多 (50-128)** | 只运行一次，多用点样本评估更准确 |
-| `--num_examples` | **较少 (10-32)** | 每层都运行，太多会很慢 |
+| `--layer_importance_samples` | **更多 (50-128)** | 只运行一次，多用点样本评估更准确 |
+| `--channel_importance_samples` | **较少 (10-32)** | 每层都运行，太多会很慢 |
 
 ### 原因分析
 
@@ -107,8 +107,8 @@
 ```bash
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --importance_samples 20 \
-    --num_examples 5 \
+    --layer_importance_samples 20 \
+    --channel_importance_samples 5 \
     --layer_start 10 \
     --layer_end 15
 ```
@@ -127,8 +127,8 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 ```bash
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --importance_samples 50 \
-    --num_examples 10 \
+    --layer_importance_samples 50 \
+    --channel_importance_samples 10 \
     --pruning_ratio 0.25
 ```
 
@@ -146,8 +146,8 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 ```bash
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --importance_samples 128 \
-    --num_examples 32 \
+    --layer_importance_samples 128 \
+    --channel_importance_samples 32 \
     --pruning_ratio 0.25
 ```
 
@@ -166,8 +166,8 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name cache_importance \
-    --importance_samples 128 \
-    --num_examples 10 \
+    --layer_importance_samples 128 \
+    --channel_importance_samples 10 \
     --save_model
 
 # 后续实验：跳过层重要性分析
@@ -176,8 +176,8 @@ python llama3_unbalanced_pruning_gqa_aware.py \
     --save_ckpt_log_name exp_pruning_30pct \
     --pruning_ratio 0.30 \
     --skip_importance_analysis \
-    --importance_config prune_log/cache_importance/layer_importance_config.json \
-    --num_examples 20
+    --layer_importance_config prune_log/cache_importance/layer_importance_config.json \
+    --channel_importance_samples 20
 ```
 
 **特点**:
@@ -240,7 +240,7 @@ inverse策略:
 
 ### 层重要性评估方法
 
-#### `--importance_method` (默认: `removal`)
+#### `--layer_importance_method` (默认: `removal`)
 
 **选项**:
 
@@ -269,7 +269,7 @@ for layer in model.layers:
 
 ### 序列长度参数
 
-#### `--max_seq_len` (默认: 64)
+#### `--taylor_seq_len` (默认: 64)
 
 **作用**: Taylor 重要性计算时使用的序列长度
 
@@ -290,12 +290,12 @@ for layer in model.layers:
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name first_experiment \
-    --importance_method removal \
-    --importance_samples 50 \
-    --num_examples 10 \
+    --layer_importance_method removal \
+    --layer_importance_samples 50 \
+    --channel_importance_samples 10 \
     --pruning_ratio 0.25 \
     --pruning_strategy inverse \
-    --alpha 1.0 \
+    --layer_importance_weight 1.0 \
     --save_model
 ```
 
@@ -309,8 +309,8 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name debug \
-    --importance_samples 10 \
-    --num_examples 5 \
+    --layer_importance_samples 10 \
+    --channel_importance_samples 5 \
     --layer_start 10 \
     --layer_end 12 \
     --pruning_ratio 0.25
@@ -327,8 +327,8 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name cache_importance \
-    --importance_samples 128 \
-    --num_examples 10 \
+    --layer_importance_samples 128 \
+    --channel_importance_samples 10 \
     --save_model
 
 # 步骤2: 测试不同剪枝率
@@ -338,8 +338,8 @@ for ratio in 0.15 0.25 0.35; do
         --save_ckpt_log_name exp_ratio_${ratio} \
         --pruning_ratio ${ratio} \
         --skip_importance_analysis \
-        --importance_config prune_log/cache_importance/layer_importance_config.json \
-        --num_examples 10 \
+        --layer_importance_config prune_log/cache_importance/layer_importance_config.json \
+        --channel_importance_samples 10 \
         --save_model
 done
 ```
@@ -354,12 +354,12 @@ done
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name final_model \
-    --importance_method removal \
-    --importance_samples 128 \
-    --num_examples 32 \
+    --layer_importance_method removal \
+    --layer_importance_samples 128 \
+    --channel_importance_samples 32 \
     --pruning_ratio 0.25 \
     --pruning_strategy inverse \
-    --alpha 1.0 \
+    --layer_importance_weight 1.0 \
     --save_model \
     --test_after_prune \
     --finetune \
@@ -393,9 +393,9 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 
 ### 误区 1: 两个样本数必须相同
 
-❌ **错误**: `--importance_samples 50 --num_examples 50`
+❌ **错误**: `--layer_importance_samples 50 --channel_importance_samples 50`
 
-✅ **正确**: `--importance_samples 50 --num_examples 10`
+✅ **正确**: `--layer_importance_samples 50 --channel_importance_samples 10`
 
 **原因**: importance_samples 只运行一次，num_examples 每层都运行
 
@@ -403,9 +403,9 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 
 ### 误区 2: 样本数越多越好
 
-❌ **错误**: `--importance_samples 500 --num_examples 100`
+❌ **错误**: `--layer_importance_samples 500 --channel_importance_samples 100`
 
-✅ **正确**: `--importance_samples 128 --num_examples 32`
+✅ **正确**: `--layer_importance_samples 128 --channel_importance_samples 32`
 
 **原因**: 超过128个样本后收益递减，但时间成本线性增长
 
@@ -420,7 +420,7 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 ```bash
 # 好习惯
 --skip_importance_analysis \
---importance_config prune_log/cache/layer_importance_config.json
+--layer_importance_config prune_log/cache/layer_importance_config.json
 ```
 
 ---

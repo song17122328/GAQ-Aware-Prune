@@ -53,26 +53,21 @@ def main():
                        help='目标剪枝率（整体平均）')
 
     # 层重要度评估
-    parser.add_argument('--layer_importance_method', '--importance_method',
-                       type=str, default='removal', dest='layer_importance_method',
+    parser.add_argument('--layer_importance_method', type=str, default='removal',
                        choices=['removal', 'activation'],
                        help='层重要度评估方法：removal(移除层) 或 activation(激活值)')
-    parser.add_argument('--layer_importance_samples', '--importance_samples',
-                       type=int, default=50, dest='layer_importance_samples',
+    parser.add_argument('--layer_importance_samples', type=int, default=50,
                        help='用于评估层重要度的样本数量')
     parser.add_argument('--skip_importance_analysis', action='store_true',
                        help='跳过层重要度分析，使用已保存的配置')
-    parser.add_argument('--layer_importance_config', '--importance_config',
-                       type=str, default='layer_importance_config.json',
-                       dest='layer_importance_config',
+    parser.add_argument('--layer_importance_config', type=str, default='layer_importance_config.json',
                        help='层重要度配置文件路径')
 
     # 非均衡剪枝策略
     parser.add_argument('--pruning_strategy', type=str, default='inverse',
                        choices=['inverse', 'proportional', 'uniform'],
                        help='剪枝策略：inverse(重要层剪少), proportional(重要层剪多), uniform(均匀)')
-    parser.add_argument('--layer_importance_weight', '--alpha',
-                       type=float, default=1.0, dest='layer_importance_weight',
+    parser.add_argument('--layer_importance_weight', type=float, default=1.0,
                        help='层间剪枝率差异系数：越大层间差异越明显（推荐0.5-3.0）')
     parser.add_argument('--min_pruning_rate', type=float, default=0.15,
                        help='单层最小剪枝率（至少剪1个GQA组）')
@@ -86,11 +81,9 @@ def main():
                        help='剪枝结束层')
 
     # 通道/头重要性评估
-    parser.add_argument('--channel_importance_samples', '--num_examples',
-                       type=int, default=10, dest='channel_importance_samples',
+    parser.add_argument('--channel_importance_samples', type=int, default=10,
                        help='用于计算通道/头Taylor重要性的样本数（Attention层评估头，MLP层评估通道）')
-    parser.add_argument('--taylor_seq_len', '--max_seq_len',
-                       type=int, default=128, dest='taylor_seq_len',
+    parser.add_argument('--taylor_seq_len', type=int, default=128,
                        help='Taylor重要性计算时的序列长度')
 
     # 其他参数

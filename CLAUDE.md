@@ -413,7 +413,7 @@ python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name llama3_pruned_25pct \
     --pruning_ratio 0.25 \
-    --importance_method removal \
+    --layer_importance_method removal \
     --pruning_strategy inverse \
     --prune_mlp \
     --save_model \
@@ -431,8 +431,8 @@ python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name debug_test \
     --pruning_ratio 0.25 \
-    --importance_samples 10 \
-    --num_examples 5 \
+    --layer_importance_samples 10 \
+    --channel_importance_samples 5 \
     --layer_start 10 \
     --layer_end 15 \
     --test_after_prune
@@ -454,10 +454,10 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
-| `--importance_method` | str | `removal` | `removal` or `activation` |
-| `--importance_samples` | int | `50` | Samples for layer importance evaluation |
+| `--layer_importance_method` | str | `removal` | `removal` or `activation` |
+| `--layer_importance_samples` | int | `50` | Samples for layer importance evaluation |
 | `--skip_importance_analysis` | flag | `False` | Skip analysis, load from file |
-| `--importance_config` | str | `layer_importance_config.json` | Config file path |
+| `--layer_importance_config` | str | `layer_importance_config.json` | Config file path |
 
 #### Pruning Strategy Arguments
 
@@ -581,8 +581,8 @@ python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name test_basic \
     --pruning_ratio 0.25 \
-    --importance_samples 10 \
-    --num_examples 5 \
+    --layer_importance_samples 10 \
+    --channel_importance_samples 5 \
     --layer_start 10 \
     --layer_end 15
 
@@ -718,14 +718,14 @@ config = checkpoint['config']
 **Quick Fixes**:
 1. Reduce samples:
    ```bash
-   --importance_samples 20 \
-   --num_examples 5 \
+   --layer_importance_samples 20 \
+   --channel_importance_samples 5 \
    --finetune_samples 100
    ```
 
 2. Reduce sequence length:
    ```bash
-   --max_seq_len 64 \
+   --taylor_seq_len 64 \
    --finetune_seq_len 256
    ```
 
@@ -795,21 +795,21 @@ config = checkpoint['config']
 1. Use cached importance:
    ```bash
    # First run: analyze once
-   python script.py --importance_samples 50 --save_ckpt_log_name cache_importance
+   python script.py --layer_importance_samples 50 --save_ckpt_log_name cache_importance
 
    # Subsequent runs: reuse
    python script.py --skip_importance_analysis \
-       --importance_config prune_log/cache_importance/layer_importance_config.json
+       --layer_importance_config prune_log/cache_importance/layer_importance_config.json
    ```
 
 2. Use activation-based method (faster than removal):
    ```bash
-   --importance_method activation
+   --layer_importance_method activation
    ```
 
 3. Reduce samples:
    ```bash
-   --importance_samples 20  # Instead of 50
+   --layer_importance_samples 20  # Instead of 50
    ```
 
 #### Issue 4: Model Checkpoint Too Large
@@ -943,8 +943,8 @@ python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name debug \
     --pruning_ratio 0.25 \
-    --importance_samples 10 \
-    --num_examples 5 \
+    --layer_importance_samples 10 \
+    --channel_importance_samples 5 \
     --layer_start 10 \
     --layer_end 15
 
@@ -952,7 +952,7 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --skip_importance_analysis \
-    --importance_config prune_log/previous_run/layer_importance_config.json \
+    --layer_importance_config prune_log/previous_run/layer_importance_config.json \
     --pruning_ratio 0.30 \
     --save_model
 ```
