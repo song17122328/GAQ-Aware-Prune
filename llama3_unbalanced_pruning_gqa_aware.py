@@ -112,7 +112,7 @@ def main():
 
     # 剪枝参数
     parser.add_argument('--pruning_ratio', type=float, default=0.25,
-                       help='目标剪枝率（整体平均）')
+                       help='目标剪枝率（相对于Attention+MLP总参数量，0.25表示剪掉Attention+MLP总参数的25%）')
     parser.add_argument('--pruning_distribution', type=str, default='5:5',
                        help='Attention和MLP的剪枝参数量比例（例如: 5:5表示各占一半, 10:0表示只剪MLP, 0:10表示只剪Attention）')
 
@@ -133,10 +133,10 @@ def main():
                        help='剪枝策略：inverse(重要层剪少), proportional(重要层剪多), uniform(均匀)')
     parser.add_argument('--layer_importance_weight', type=float, default=1.0,
                        help='层间剪枝率差异系数：越大层间差异越明显（推荐0.5-3.0）')
-    parser.add_argument('--min_pruning_rate', type=float, default=0.15,
-                       help='单层最小剪枝率（至少剪1个GQA组）')
-    parser.add_argument('--max_pruning_rate', type=float, default=0.5,
-                       help='单层最大剪枝率')
+    parser.add_argument('--min_pruning_rate', type=float, default=0.0,
+                       help='单层最小剪枝率（0表示允许不剪枝）')
+    parser.add_argument('--max_pruning_rate', type=float, default=1.0,
+                       help='单层最大剪枝率（1.0表示允许完全剪枝）')
 
     # 剪枝范围
     parser.add_argument('--layer_start', type=int, default=0,
@@ -274,7 +274,35 @@ def main():
 
     # 统计剪枝前参数量（所有参数）
     before_pruning_parameters = sum(p.numel() for p in model.parameters())
-    logger.log(f"剪枝前参数量: {before_pruning_parameters:,}")
+    logger.log(f"模型总参数量: {before_pruning_parameters:,}")
+
+    # 统计原始模型的 Attention 和 MLP 参数量
+    logger.log("\n" + "=" * 60)
+    logger.log("原始模型参数量统计")
+    logger.log("=" * 60)
+
+    original_attention_params, original_mlp_params = compute_component_param_counts(
+        model, 0, num_layers
+    )
+    total_original_attention = sum(original_attention_params.values())
+    total_original_mlp = sum(original_mlp_params.values())
+    total_original_prunable = total_original_attention + total_original_mlp
+
+    logger.log(f"\n所有层的参数量统计:")
+    logger.log(f"  Attention 总参数量: {total_original_attention:,}")
+    logger.log(f"  MLP 总参数量: {total_original_mlp:,}")
+    logger.log(f"  Attention+MLP 总和: {total_original_prunable:,}")
+    logger.log(f"  其他参数（embedding, norm等）: {before_pruning_parameters - total_original_prunable:,}")
+
+    logger.log(f"\n参数量占比:")
+    logger.log(f"  Attention: {total_original_attention/total_original_prunable:.2%} of (Attention+MLP)")
+    logger.log(f"  MLP: {total_original_mlp/total_original_prunable:.2%} of (Attention+MLP)")
+    logger.log(f"  Attention:MLP 比值 = {total_original_attention/total_original_mlp:.3f}:1")
+
+    logger.log(f"\n占全局模型的比例:")
+    logger.log(f"  Attention: {total_original_attention/before_pruning_parameters:.2%} of total")
+    logger.log(f"  MLP: {total_original_mlp/before_pruning_parameters:.2%} of total")
+    logger.log(f"  Attention+MLP: {total_original_prunable/before_pruning_parameters:.2%} of total")
 
     # ==================== 统一数据加载 ====================
     logger.log("\n" + "=" * 60)
@@ -373,13 +401,59 @@ def main():
     logger.log(f"可剪枝总参数量: {total_prunable_params:,}")
 
     # 根据 pruning_distribution 分配剪枝参数量
-    total_pruned_params = int(total_prunable_params * args.pruning_ratio)
-    attn_pruned_params = int(total_pruned_params * args.attn_ratio / (args.attn_ratio + args.mlp_ratio))
-    mlp_pruned_params = int(total_pruned_params * args.mlp_ratio / (args.attn_ratio + args.mlp_ratio))
+    logger.log(f"\n" + "-" * 60)
+    logger.log("剪枝参数量分配计算过程:")
+    logger.log("-" * 60)
 
-    logger.log(f"\n总目标剪枝参数量: {total_pruned_params:,} ({args.pruning_ratio:.1%})")
-    logger.log(f"  -> Attention 目标剪枝量: {attn_pruned_params:,} ({attn_pruned_params/total_attention_params:.2%} of Attention)")
-    logger.log(f"  -> MLP 目标剪枝量: {mlp_pruned_params:,} ({mlp_pruned_params/total_mlp_params:.2%} of MLP)")
+    total_pruned_params = int(total_prunable_params * args.pruning_ratio)
+    logger.log(f"\n1. 计算总目标剪枝参数量:")
+    logger.log(f"   total_pruned = {total_prunable_params:,} × {args.pruning_ratio}")
+    logger.log(f"   total_pruned = {total_pruned_params:,}")
+
+    logger.log(f"\n2. 根据分布比例 {args.attn_ratio}:{args.mlp_ratio} 分配:")
+    total_ratio_sum = args.attn_ratio + args.mlp_ratio
+    logger.log(f"   Attention 占比 = {args.attn_ratio}/{total_ratio_sum} = {args.attn_ratio/total_ratio_sum:.2%}")
+    logger.log(f"   MLP 占比 = {args.mlp_ratio}/{total_ratio_sum} = {args.mlp_ratio/total_ratio_sum:.2%}")
+
+    attn_pruned_params = int(total_pruned_params * args.attn_ratio / total_ratio_sum)
+    mlp_pruned_params = int(total_pruned_params * args.mlp_ratio / total_ratio_sum)
+
+    logger.log(f"\n3. 计算各组件目标剪枝量:")
+    logger.log(f"   Attention 目标剪枝量 = {total_pruned_params:,} × {args.attn_ratio/total_ratio_sum:.2%} = {attn_pruned_params:,}")
+    logger.log(f"   MLP 目标剪枝量 = {total_pruned_params:,} × {args.mlp_ratio/total_ratio_sum:.2%} = {mlp_pruned_params:,}")
+
+    logger.log(f"\n4. 计算各组件剪枝率:")
+    attn_prune_rate = attn_pruned_params / total_attention_params if total_attention_params > 0 else 0
+    mlp_prune_rate = mlp_pruned_params / total_mlp_params if total_mlp_params > 0 else 0
+    logger.log(f"   Attention 剪枝率 = {attn_pruned_params:,} / {total_attention_params:,} = {attn_prune_rate:.2%}")
+    logger.log(f"   MLP 剪枝率 = {mlp_pruned_params:,} / {total_mlp_params:,} = {mlp_prune_rate:.2%}")
+
+    # 异常检查
+    logger.log(f"\n5. 参数量有效性检查:")
+    errors = []
+    if attn_pruned_params > total_attention_params:
+        errors.append(f"Attention 目标剪枝量 ({attn_pruned_params:,}) 超过实际参数量 ({total_attention_params:,})")
+    if mlp_pruned_params > total_mlp_params:
+        errors.append(f"MLP 目标剪枝量 ({mlp_pruned_params:,}) 超过实际参数量 ({total_mlp_params:,})")
+
+    if errors:
+        logger.log("   ❌ 发现错误:")
+        for error in errors:
+            logger.log(f"      - {error}")
+        raise ValueError(f"剪枝参数量配置错误，请调整 --pruning_ratio 或 --pruning_distribution。\n详细信息:\n" + "\n".join(errors))
+    else:
+        logger.log("   ✅ 参数量配置有效")
+
+    logger.log(f"\n6. 计算占全局模型的剪枝率:")
+    global_prune_rate = total_pruned_params / before_pruning_parameters
+    logger.log(f"   全局剪枝率 = {total_pruned_params:,} / {before_pruning_parameters:,} = {global_prune_rate:.2%}")
+
+    logger.log(f"\n" + "=" * 60)
+    logger.log("剪枝配置总结:")
+    logger.log("=" * 60)
+    logger.log(f"总目标剪枝量: {total_pruned_params:,} ({args.pruning_ratio:.1%} of Attention+MLP, {global_prune_rate:.2%} of total)")
+    logger.log(f"  -> Attention: {attn_pruned_params:,} ({attn_prune_rate:.2%} of Attention)")
+    logger.log(f"  -> MLP: {mlp_pruned_params:,} ({mlp_prune_rate:.2%} of MLP)")
 
     # 创建计算器
     calculator = UnbalancedStructuredPruningCalculator(layer_importance, num_layers)
@@ -637,10 +711,37 @@ def main():
     logger.log(f"  减少: {before_size_gb - final_size_gb:.2f} GB")
 
     # 验证所有层保持4:1 GQA比例
-    gqa_ratios = [layer.self_attn.num_heads // layer.self_attn.num_key_value_heads
-                  for layer in model.model.layers]
+    logger.log(f"\nGQA比例验证:")
+    gqa_ratios = []
+    for idx, layer in enumerate(model.model.layers):
+        # 检查是否有 num_heads 属性（剪枝后会设置）
+        if hasattr(layer.self_attn, 'num_heads') and hasattr(layer.self_attn, 'num_key_value_heads'):
+            num_q = layer.self_attn.num_heads
+            num_kv = layer.self_attn.num_key_value_heads
+        else:
+            # 未剪枝的层，从权重维度计算
+            # q_proj: (num_q_heads * head_dim, hidden_size)
+            # k_proj: (num_kv_heads * head_dim, hidden_size)
+            num_q = layer.self_attn.q_proj.out_features // args.head_dim
+            num_kv = layer.self_attn.k_proj.out_features // args.head_dim
+
+        ratio = num_q // num_kv if num_kv > 0 else 0
+        gqa_ratios.append(ratio)
+
     all_4_to_1 = all(ratio == 4 for ratio in gqa_ratios)
-    logger.log(f"\nGQA比例验证: {'✅ 所有层保持4:1' if all_4_to_1 else '❌ 存在不一致'}")
+    unique_ratios = set(gqa_ratios)
+
+    if all_4_to_1:
+        logger.log(f"  ✅ 所有层保持4:1比例")
+    else:
+        logger.log(f"  ❌ 存在不一致")
+        logger.log(f"  发现的比例: {sorted(unique_ratios)}")
+        # 显示不一致的层
+        inconsistent_layers = [i for i, r in enumerate(gqa_ratios) if r != 4]
+        if len(inconsistent_layers) <= 5:
+            logger.log(f"  不一致的层: {inconsistent_layers}")
+        else:
+            logger.log(f"  不一致的层数量: {len(inconsistent_layers)}")
 
     # ==================== 步骤8: 评估剪枝后PPL ====================
     ppl_before_finetune = None
