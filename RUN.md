@@ -6,29 +6,54 @@
 
 ## 快速启动
 
-### 基本命令（推荐）
+### 完整流程（剪枝 + 微调，推荐）⭐
 
 ```bash
 python llama3_unbalanced_pruning_v3_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
-    --save_ckpt_log_name llama3_gqa_aware_pruned_v3 \
+    --save_ckpt_log_name llama3_pruned_finetuned \
     --pruning_ratio 0.25 \
     --importance_method removal \
     --importance_samples 50 \
     --pruning_strategy inverse \
-    --alpha 1.0 \
-    --min_pruning_rate 0.15 \
-    --max_pruning_rate 0.5 \
-    --layer_start 0 \
-    --layer_end 32 \
-    --num_examples 10 \
-    --head_dim 128 \
-    --gqa_ratio 4 \
     --prune_mlp \
     --save_model \
     --test_after_prune \
-    --max_seq_len 128
+    --finetune \
+    --finetune_lr 1e-5 \
+    --finetune_epochs 1 \
+    --finetune_samples 500
 ```
+
+**流程说明**：
+1. 评估层重要性（50个样本）
+2. 计算各层剪枝率（逆策略：重要层剪少）
+3. GQA-Aware剪枝（Attention + MLP）
+4. 保存剪枝后的模型
+5. 测试剪枝后的 PPL
+6. **微调恢复性能**（500个样本，1轮）
+7. 保存微调后的模型
+8. 测试微调后的 PPL
+
+**预期结果**：
+- 参数减少 ~25%
+- 剪枝后 PPL 上升 5-10%
+- 微调后 PPL 恢复到接近原始水平（<2% 退化）
+
+### 仅剪枝（不微调）
+
+```bash
+python llama3_unbalanced_pruning_v3_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name llama3_pruned_only \
+    --pruning_ratio 0.25 \
+    --importance_method removal \
+    --prune_mlp \
+    --save_model \
+    --test_after_prune
+```
+
+**说明**：仅执行剪枝，跳过微调步骤
 
 **注意**: 设备会自动选择最优 GPU，无需手动指定
 
