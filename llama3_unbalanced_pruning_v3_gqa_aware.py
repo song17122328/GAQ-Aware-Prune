@@ -141,9 +141,9 @@ def main():
     )
 
     # ==================== 步骤1: 加载模型 ====================
-    logger.log("=" * 80)
+    logger.log("\n" + "=" * 60)
     logger.log("步骤1: 加载模型")
-    logger.log("=" * 80)
+    logger.log("=" * 60)
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
 
@@ -173,9 +173,9 @@ def main():
 
     # ==================== 步骤2: 评估层重要性 ====================
     if not args.skip_importance_analysis:
-        logger.log("=" * 80)
+        logger.log("\n" + "=" * 60)
         logger.log("步骤2: 评估层重要性")
-        logger.log("=" * 80)
+        logger.log("=" * 60)
 
         eval_texts = load_evaluation_data(tokenizer, num_samples=args.importance_samples)
         logger.log(f"加载了 {len(eval_texts)} 个评估样本")
@@ -191,8 +191,22 @@ def main():
             logger.log("使用激活值法评估重要性...")
             layer_importance = analyzer.measure_layer_importance_by_activation(eval_texts)
 
-        logger.log("\n层重要性评分:")
-        for layer_idx, importance in sorted(layer_importance.items()):
+        # 只打印统计信息和极值层
+        importance_values = list(layer_importance.values())
+        sorted_layers = sorted(layer_importance.items(), key=lambda x: x[1], reverse=True)
+
+        logger.log(f"\n层重要性统计:")
+        logger.log(f"  平均: {np.mean(importance_values):.6f}")
+        logger.log(f"  标准差: {np.std(importance_values):.6f}")
+        logger.log(f"  最大: {max(importance_values):.6f}")
+        logger.log(f"  最小: {min(importance_values):.6f}")
+
+        logger.log(f"\n最重要的5层:")
+        for layer_idx, importance in sorted_layers[:5]:
+            logger.log(f"  Layer {layer_idx}: {importance:.6f}")
+
+        logger.log(f"最不重要的5层:")
+        for layer_idx, importance in sorted_layers[-5:]:
             logger.log(f"  Layer {layer_idx}: {importance:.6f}")
 
     else:
@@ -202,9 +216,9 @@ def main():
         layer_importance = {i: 1.0 for i in range(num_layers)}
 
     # ==================== 步骤3: 计算各层剪枝率 ====================
-    logger.log("=" * 80)
+    logger.log("\n" + "=" * 60)
     logger.log("步骤3: 计算各层剪枝率")
-    logger.log("=" * 80)
+    logger.log("=" * 60)
 
     calculator = UnbalancedStructuredPruningCalculator(layer_importance, num_layers)
 
@@ -224,10 +238,7 @@ def main():
     logger.log(f"  最小剪枝率: {stats['min_pruning_rate']:.4f}")
     logger.log(f"  最大剪枝率: {stats['max_pruning_rate']:.4f}")
 
-    logger.log("\n各层剪枝率:")
-    for layer_idx in range(num_layers):
-        rate = layer_pruning_rates.get(layer_idx, 0.0)
-        logger.log(f"  Layer {layer_idx}: {rate:.4f}")
+    # 不再打印所有32层的详细剪枝率，仅保存到JSON配置文件中
 
     # 保存配置
     config_path = os.path.join(logger.log_dir, args.importance_config)
@@ -238,19 +249,10 @@ def main():
     calculator.visualize_pruning_strategy(layer_pruning_rates, save_path=viz_path)
 
     # ==================== 步骤4: GQA-Aware剪枝 ====================
-    logger.log("=" * 80)
+    logger.log("\n" + "=" * 60)
     logger.log("步骤4: GQA-Aware结构化剪枝")
-    logger.log("=" * 80)
-
-    logger.log(f"\n🎯 核心改进：GQA-Aware Taylor Importance")
-    logger.log(f"  - 将'4个Q heads + 1个KV head'视为一个GQA组")
-    logger.log(f"  - 计算每个GQA组的总Taylor importance")
-    logger.log(f"  - 保留importance最高的N个完整组")
-    logger.log(f"  - 自然保持4:1比例，保持语义对齐")
-    logger.log(f"\n对比旧方法（torch_pruning + 简单截断）：")
-    logger.log(f"  - 旧方法PPL: 71万（模型崩溃）")
-    logger.log(f"  - 新方法预期: <5% PPL退化")
-    logger.log("=" * 80 + "\n")
+    logger.log("=" * 60)
+    logger.log("使用GQA组级Taylor Importance，保持4:1 Q:KV比例\n")
 
     # 准备样本数据用于计算梯度
     example_prompts = get_examples('wikitext', tokenizer, args.num_examples, seq_len=64).to(args.device)
@@ -269,9 +271,7 @@ def main():
     # 逐层剪枝
     for layer_idx in pruning_layers:
         rate = layer_pruning_rates[layer_idx]
-        logger.log(f"\n{'='*80}")
-        logger.log(f"处理 Layer {layer_idx} (剪枝率: {rate:.2%})")
-        logger.log(f"{'='*80}")
+        logger.log(f"\n处理 Layer {layer_idx} (剪枝率: {rate:.2%})")
 
         layer = model.model.layers[layer_idx]
 
@@ -280,63 +280,39 @@ def main():
             for param in model.model.layers[pruned_idx].parameters():
                 param.requires_grad = False
 
-        # ===== 步骤1: 计算梯度 =====
-        logger.log("\n1. 计算梯度（用于Taylor importance）...")
-
+        # 计算梯度
         model.zero_grad()
         loss = model(example_prompts, labels=example_prompts).loss
-        logger.log(f"   Loss: {loss.item():.4f}")
         loss.backward()
 
-        # ===== 步骤2: 计算importance (Attention + MLP) =====
-        logger.log("\n2. 计算importance...")
-
-        # Attention: GQA组的importance
+        # 计算importance
         group_imp = compute_gqa_group_importance(layer, args.head_dim, args.gqa_ratio)
-        logger.log(f"   Attention GQA组importance: {group_imp.detach().cpu().numpy()}")
 
-        # MLP: Taylor importance (如果需要剪枝)
         if args.prune_mlp:
             gate_salience = (layer.mlp.gate_proj.weight * layer.mlp.gate_proj.weight.grad).abs().sum(1)
             up_salience = (layer.mlp.up_proj.weight * layer.mlp.up_proj.weight.grad).abs().sum(1)
             down_salience = (layer.mlp.down_proj.weight * layer.mlp.down_proj.weight.grad).abs().sum(0)
             mlp_importance = gate_salience + up_salience + down_salience
-            logger.log(f"   MLP通道importance统计: mean={mlp_importance.mean().item():.4f}, std={mlp_importance.std().item():.4f}")
 
-        # ===== 步骤3: 执行Attention剪枝 (GQA-aware) =====
-        logger.log("\n3. Attention剪枝（GQA-aware）...")
-
-        # 确定要保留的GQA组数量
+        # Attention剪枝
         num_kv_heads = len(group_imp)
         num_groups_to_prune = int(num_kv_heads * rate)
-        target_num_kv_heads = num_kv_heads - num_groups_to_prune
-        target_num_kv_heads = max(1, target_num_kv_heads)
+        target_num_kv_heads = max(1, num_kv_heads - num_groups_to_prune)
 
-        # 选择要保留的组
-        keep_indices, prune_indices = select_gqa_groups_to_prune(group_imp, target_num_kv_heads)
-        logger.log(f"   保留组: {keep_indices} (共{len(keep_indices)}组)")
-        logger.log(f"   剪枝组: {prune_indices} (共{len(prune_indices)}组)")
-
-        # 执行剪枝
+        keep_indices, _ = select_gqa_groups_to_prune(group_imp, target_num_kv_heads)
         num_q, num_kv = prune_attention_by_gqa_groups(layer, keep_indices, args.head_dim, args.gqa_ratio)
-        logger.log(f"   ✅ Attention剪枝完成: {32}Q:{8}KV → {num_q}Q:{num_kv}KV (比例{num_q//num_kv}:1)")
+        logger.log(f"  Attention: {32}Q:{8}KV → {num_q}Q:{num_kv}KV", end="")
 
-        # ===== 步骤4: 执行MLP剪枝 (Taylor-based, 可选) =====
+        # MLP剪枝
         if args.prune_mlp:
-            logger.log("\n4. MLP剪枝（Taylor-based）...")
-
-            # 计算要保留的通道数
             num_channels = mlp_importance.shape[0]
             num_channels_to_prune = int(num_channels * rate)
             num_channels_to_prune = (num_channels_to_prune // args.head_dim) * args.head_dim
-            target_channels = num_channels - num_channels_to_prune
-            target_channels = max(args.head_dim, target_channels)
+            target_channels = max(args.head_dim, num_channels - num_channels_to_prune)
 
-            # 选择importance最高的通道
             _, sorted_indices = torch.sort(mlp_importance, descending=True)
             keep_indices_mlp = sorted(sorted_indices[:target_channels].tolist())
 
-            # 剪枝gate_proj和up_proj（并联）
             layer.mlp.gate_proj.weight.data = layer.mlp.gate_proj.weight.data[keep_indices_mlp, :]
             layer.mlp.up_proj.weight.data = layer.mlp.up_proj.weight.data[keep_indices_mlp, :]
 
@@ -345,17 +321,17 @@ def main():
             if layer.mlp.up_proj.bias is not None:
                 layer.mlp.up_proj.bias.data = layer.mlp.up_proj.bias.data[keep_indices_mlp]
 
-            # 剪枝down_proj（输入维度）
             layer.mlp.down_proj.weight.data = layer.mlp.down_proj.weight.data[:, keep_indices_mlp]
 
-            # 更新Linear层属性
             layer.mlp.gate_proj.out_features = target_channels
             layer.mlp.up_proj.out_features = target_channels
             layer.mlp.down_proj.in_features = target_channels
 
-            logger.log(f"   ✅ MLP剪枝完成: {num_channels} → {target_channels}通道 (保留{target_channels/num_channels:.1%})")
+            logger.log(f", MLP: {num_channels}→{target_channels}")
+        else:
+            logger.log("")  # 换行
 
-        # ===== 步骤5: 清理梯度和计算图 =====
+        # 清理
         del loss
         model.zero_grad()
         for param in layer.parameters():
@@ -363,18 +339,12 @@ def main():
                 param.grad = None
         torch.cuda.empty_cache()
 
-        # 记录已剪枝的层
         pruned_layer_indices.append(layer_idx)
 
-        # 验证forward
-        with torch.no_grad():
-            _ = model(example_prompts[:1])
-        logger.log(f"\n✅ Layer {layer_idx} 剪枝完成并验证通过")
-
     # ==================== 步骤5: 保存模型 ====================
-    logger.log("\n" + "=" * 80)
+    logger.log("\n" + "=" * 60)
     logger.log("步骤5: 保存剪枝后的模型")
-    logger.log("=" * 80)
+    logger.log("=" * 60)
 
     if args.save_model:
         model.half()
@@ -393,9 +363,9 @@ def main():
         logger.log("⚠️ 未启用 --save_model，跳过模型保存")
 
     # ==================== 步骤6: 重新加载模型 ====================
-    logger.log("\n" + "=" * 80)
-    logger.log("步骤6: 重新加载模型以验证保存/加载流程")
-    logger.log("=" * 80)
+    logger.log("\n" + "=" * 60)
+    logger.log("步骤6: 重新加载模型")
+    logger.log("=" * 60)
 
     if args.save_model:
         # 删除原模型，释放内存
@@ -414,9 +384,9 @@ def main():
         logger.log("⚠️ 未保存模型，使用内存中的模型继续")
 
     # ==================== 步骤7: 最终统计 ====================
-    logger.log("\n" + "=" * 80)
-    logger.log("步骤7: 统计参数量和配置")
-    logger.log("=" * 80)
+    logger.log("\n" + "=" * 60)
+    logger.log("步骤7: 最终统计")
+    logger.log("=" * 60)
 
     # 统计剪枝后参数量（所有参数，不管 requires_grad 状态）
     final_parameters = sum(p.numel() for p in model.parameters())
@@ -434,18 +404,17 @@ def main():
     logger.log(f"  剪枝后: {final_size_gb:.2f} GB")
     logger.log(f"  减少: {before_size_gb - final_size_gb:.2f} GB")
 
-    logger.log("\n各层Attention配置:")
-    for idx, layer in enumerate(model.model.layers):
-        q_heads = layer.self_attn.num_heads
-        kv_heads = layer.self_attn.num_key_value_heads
-        ratio = q_heads // kv_heads
-        logger.log(f"  Layer {idx}: Q={q_heads}, KV={kv_heads}, ratio={ratio}:1")
+    # 验证所有层保持4:1 GQA比例
+    gqa_ratios = [layer.self_attn.num_heads // layer.self_attn.num_key_value_heads
+                  for layer in model.model.layers]
+    all_4_to_1 = all(ratio == 4 for ratio in gqa_ratios)
+    logger.log(f"\nGQA比例验证: {'✅ 所有层保持4:1' if all_4_to_1 else '❌ 存在不一致'}")
 
     # ==================== 步骤8: 评估PPL ====================
     if args.test_after_prune:
-        logger.log("\n" + "=" * 80)
-        logger.log("步骤8: 评估困惑度（使用重新加载的模型）")
-        logger.log("=" * 80)
+        logger.log("\n" + "=" * 60)
+        logger.log("步骤8: 评估困惑度")
+        logger.log("=" * 60)
 
         model.to(args.device)
         model.eval()
@@ -453,16 +422,12 @@ def main():
         ppl = PPLMetric(model, tokenizer, ['wikitext2'],
                        seq_len=args.max_seq_len, device=args.device)
         logger.log(f"\n剪枝后 PPL: {ppl}")
-
-        logger.log("\n对比预期:")
-        logger.log(f"  - 旧方法（torch_pruning）: wikitext2 PPL = 718,107 ❌")
-        logger.log(f"  - 新方法（GQA-aware）: wikitext2 PPL = {ppl.get('wikitext2 (wikitext-2-raw-v1)', 'N/A')} ✅")
     else:
         logger.log("\n⚠️ 未启用 --test_after_prune，跳过PPL评估")
 
-    logger.log("\n" + "=" * 80)
-    logger.log("🎉 完成！")
-    logger.log("=" * 80)
+    logger.log("\n" + "=" * 60)
+    logger.log("✅ 剪枝流程完成！")
+    logger.log("=" * 60)
 
 
 if __name__ == "__main__":
