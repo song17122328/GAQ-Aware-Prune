@@ -137,6 +137,8 @@ def main():
                        help='单层最小剪枝率（0表示允许不剪枝）')
     parser.add_argument('--max_pruning_rate', type=float, default=1.0,
                        help='单层最大剪枝率（1.0表示允许完全剪枝）')
+    parser.add_argument('--freeze_top_n_layers', type=int, default=0,
+                       help='冻结重要度最高的n层，这些层不参与剪枝（0表示不冻结任何层）')
 
     # 剪枝范围
     parser.add_argument('--layer_start', type=int, default=0,
@@ -205,9 +207,9 @@ def main():
 
     args = parser.parse_args()
 
-    # 解析 pruning_distribution 参数
+    # 解析 pruning_distribution 参数（支持浮点数）
     try:
-        attn_ratio, mlp_ratio = map(int, args.pruning_distribution.split(':'))
+        attn_ratio, mlp_ratio = map(float, args.pruning_distribution.split(':'))
         if attn_ratio < 0 or mlp_ratio < 0:
             raise ValueError("剪枝比例不能为负数")
         if attn_ratio == 0 and mlp_ratio == 0:
@@ -464,10 +466,51 @@ def main():
     # 创建计算器
     calculator = UnbalancedStructuredPruningCalculator(layer_importance, num_layers)
 
-    # 分别计算 Attention 和 MLP 的层级剪枝率
-    if attn_pruned_params > 0:
-        attn_layer_pruning_rates = calculator.compute_layer_pruning_rates_by_target_params(
-            layer_param_counts=attention_param_counts,
+    # ========== 层冻结机制 ==========
+    frozen_layers = set()
+    if args.freeze_top_n_layers > 0:
+        logger.log(f"\n" + "=" * 60)
+        logger.log(f"层冻结机制: 冻结重要度最高的 {args.freeze_top_n_layers} 层")
+        logger.log("=" * 60)
+
+        # 按重要度排序，选择最重要的n层
+        sorted_layers = sorted(layer_importance.items(), key=lambda x: x[1], reverse=True)
+        frozen_layers = set([layer_idx for layer_idx, _ in sorted_layers[:args.freeze_top_n_layers]])
+
+        logger.log(f"\n冻结的层索引: {sorted(frozen_layers)}")
+        logger.log(f"冻结层的重要度:")
+        for layer_idx in sorted(frozen_layers):
+            logger.log(f"  Layer {layer_idx}: {layer_importance[layer_idx]:.6f}")
+
+        # 计算冻结层的参数量
+        frozen_attn_params = sum(attention_param_counts[i] for i in frozen_layers if i in attention_param_counts)
+        frozen_mlp_params = sum(mlp_param_counts[i] for i in frozen_layers if i in mlp_param_counts)
+        logger.log(f"\n冻结层总参数量:")
+        logger.log(f"  Attention: {frozen_attn_params:,}")
+        logger.log(f"  MLP: {frozen_mlp_params:,}")
+        logger.log(f"  合计: {frozen_attn_params + frozen_mlp_params:,}")
+
+        # 创建过滤后的参数计数字典（只包含未冻结的层）
+        attention_param_counts_unfrozen = {k: v for k, v in attention_param_counts.items() if k not in frozen_layers}
+        mlp_param_counts_unfrozen = {k: v for k, v in mlp_param_counts.items() if k not in frozen_layers}
+
+        unfrozen_attn_params = sum(attention_param_counts_unfrozen.values())
+        unfrozen_mlp_params = sum(mlp_param_counts_unfrozen.values())
+        logger.log(f"\n未冻结层总参数量:")
+        logger.log(f"  Attention: {unfrozen_attn_params:,}")
+        logger.log(f"  MLP: {unfrozen_mlp_params:,}")
+        logger.log(f"  合计: {unfrozen_attn_params + unfrozen_mlp_params:,}")
+
+        logger.log(f"\n⚠️  剪枝任务将由 {len(attention_param_counts_unfrozen)} 个未冻结层承担")
+        logger.log("=" * 60)
+    else:
+        attention_param_counts_unfrozen = attention_param_counts
+        mlp_param_counts_unfrozen = mlp_param_counts
+
+    # 分别计算 Attention 和 MLP 的层级剪枝率（仅针对未冻结的层）
+    if attn_pruned_params > 0 and len(attention_param_counts_unfrozen) > 0:
+        attn_layer_pruning_rates_unfrozen = calculator.compute_layer_pruning_rates_by_target_params(
+            layer_param_counts=attention_param_counts_unfrozen,
             target_total_pruned_params=attn_pruned_params,
             strategy=args.pruning_strategy,
             alpha=args.layer_importance_weight,
@@ -475,12 +518,15 @@ def main():
             max_rate=args.max_pruning_rate,
             use_log_transform=True
         )
+        # 为所有层创建剪枝率字典，冻结层设为0
+        attn_layer_pruning_rates = {i: 0.0 for i in attention_param_counts.keys()}
+        attn_layer_pruning_rates.update(attn_layer_pruning_rates_unfrozen)
     else:
         attn_layer_pruning_rates = {i: 0.0 for i in attention_param_counts.keys()}
 
-    if mlp_pruned_params > 0:
-        mlp_layer_pruning_rates = calculator.compute_layer_pruning_rates_by_target_params(
-            layer_param_counts=mlp_param_counts,
+    if mlp_pruned_params > 0 and len(mlp_param_counts_unfrozen) > 0:
+        mlp_layer_pruning_rates_unfrozen = calculator.compute_layer_pruning_rates_by_target_params(
+            layer_param_counts=mlp_param_counts_unfrozen,
             target_total_pruned_params=mlp_pruned_params,
             strategy=args.pruning_strategy,
             alpha=args.layer_importance_weight,
@@ -488,6 +534,9 @@ def main():
             max_rate=args.max_pruning_rate,
             use_log_transform=True
         )
+        # 为所有层创建剪枝率字典，冻结层设为0
+        mlp_layer_pruning_rates = {i: 0.0 for i in mlp_param_counts.keys()}
+        mlp_layer_pruning_rates.update(mlp_layer_pruning_rates_unfrozen)
     else:
         mlp_layer_pruning_rates = {i: 0.0 for i in mlp_param_counts.keys()}
 
@@ -788,13 +837,54 @@ def main():
     logger.log("步骤7: 最终统计")
     logger.log("=" * 60)
 
-    # 统计剪枝后参数量（所有参数，不管 requires_grad 状态）
+    # 统计剪枝后的 Attention 和 MLP 参数量
+    final_attention_params, final_mlp_params = compute_component_param_counts(model, 0, num_layers)
+    total_final_attention = sum(final_attention_params.values())
+    total_final_mlp = sum(final_mlp_params.values())
+
+    # 统计剪枝后总参数量
     final_parameters = sum(p.numel() for p in model.parameters())
-    logger.log(f"\n参数统计:")
-    logger.log(f"  剪枝前: {before_pruning_parameters:,}")
-    logger.log(f"  剪枝后: {final_parameters:,}")
-    logger.log(f"  减少量: {before_pruning_parameters - final_parameters:,}")
-    logger.log(f"  实际剪枝率: {(1 - final_parameters/before_pruning_parameters)*100:.2f}%")
+    total_final_prunable = total_final_attention + total_final_mlp
+
+    logger.log(f"\n参数量详细统计:")
+    logger.log(f"\n{'组件':<15} {'剪枝前':<20} {'剪枝后':<20} {'减少量':<20} {'减少率':<10}")
+    logger.log("-" * 85)
+
+    # Attention 统计
+    attn_reduced = total_original_attention - total_final_attention
+    attn_reduction_rate = attn_reduced / total_original_attention if total_original_attention > 0 else 0
+    logger.log(f"{'Attention':<15} {total_original_attention:<20,} {total_final_attention:<20,} {attn_reduced:<20,} {attn_reduction_rate:<10.2%}")
+
+    # MLP 统计
+    mlp_reduced = total_original_mlp - total_final_mlp
+    mlp_reduction_rate = mlp_reduced / total_original_mlp if total_original_mlp > 0 else 0
+    logger.log(f"{'MLP':<15} {total_original_mlp:<20,} {total_final_mlp:<20,} {mlp_reduced:<20,} {mlp_reduction_rate:<10.2%}")
+
+    # Attention+MLP 合计
+    prunable_reduced = (total_original_attention + total_original_mlp) - (total_final_attention + total_final_mlp)
+    prunable_reduction_rate = prunable_reduced / total_original_prunable if total_original_prunable > 0 else 0
+    logger.log("-" * 85)
+    logger.log(f"{'Attn+MLP 合计':<15} {total_original_prunable:<20,} {total_final_prunable:<20,} {prunable_reduced:<20,} {prunable_reduction_rate:<10.2%}")
+
+    # 其他参数（embedding, norm等）
+    other_original = before_pruning_parameters - total_original_prunable
+    other_final = final_parameters - total_final_prunable
+    other_reduced = other_original - other_final
+    logger.log(f"{'其他参数':<15} {other_original:<20,} {other_final:<20,} {other_reduced:<20,} {'-':<10}")
+
+    # 总计
+    total_reduced = before_pruning_parameters - final_parameters
+    total_reduction_rate = total_reduced / before_pruning_parameters if before_pruning_parameters > 0 else 0
+    logger.log("-" * 85)
+    logger.log(f"{'模型总计':<15} {before_pruning_parameters:<20,} {final_parameters:<20,} {total_reduced:<20,} {total_reduction_rate:<10.2%}")
+
+    logger.log(f"\n参数量占比分析:")
+    logger.log(f"  剪枝前 Attention:MLP = {total_original_attention/total_original_mlp:.3f}:1")
+    logger.log(f"  剪枝后 Attention:MLP = {total_final_attention/total_final_mlp:.3f}:1" if total_final_mlp > 0 else "  剪枝后 MLP已完全剪除")
+
+    logger.log(f"\n剪枝量占比:")
+    logger.log(f"  相对 Attention+MLP: {prunable_reduction_rate:.2%} (目标: {args.pruning_ratio:.2%})")
+    logger.log(f"  相对模型总参数量: {total_reduction_rate:.2%}")
 
     # 计算物理大小（假设 float16，每个参数 2 bytes）
     before_size_gb = before_pruning_parameters * 2 / (1024**3)
@@ -802,7 +892,7 @@ def main():
     logger.log(f"\n模型大小（FP16）:")
     logger.log(f"  剪枝前: {before_size_gb:.2f} GB")
     logger.log(f"  剪枝后: {final_size_gb:.2f} GB")
-    logger.log(f"  减少: {before_size_gb - final_size_gb:.2f} GB")
+    logger.log(f"  减少: {before_size_gb - final_size_gb:.2f} GB ({(before_size_gb - final_size_gb)/before_size_gb:.2%})")
 
     # 验证所有层保持4:1 GQA比例
     logger.log(f"\nGQA比例验证:")
