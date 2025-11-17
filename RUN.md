@@ -95,6 +95,17 @@ python llama3_unbalanced_pruning_v3_gqa_aware.py \
 | `--save_model` | - | 是否保存模型 |
 | `--test_after_prune` | - | 剪枝后是否立即评估 PPL |
 
+### 微调参数（可选）
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--finetune` | - | 剪枝后是否进行微调（恢复性能）|
+| `--finetune_lr` | `1e-5` | 微调学习率（建议 1e-5 ~ 1e-4）|
+| `--finetune_epochs` | `1` | 微调轮数 |
+| `--finetune_samples` | `500` | 微调使用的样本数量（从 wikitext2 训练集）|
+| `--finetune_batch_size` | `1` | 微调 batch size（受显存限制）|
+| `--finetune_seq_len` | `512` | 微调序列长度 |
+
 ---
 
 ## 常用场景
@@ -244,6 +255,85 @@ python llama3_unbalanced_pruning_v3_gqa_aware.py \
 
 ---
 
+### 场景 7：剪枝 + 微调（完整流程）
+
+```bash
+python llama3_unbalanced_pruning_v3_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name llama3_pruned_finetuned \
+    --pruning_ratio 0.25 \
+    --importance_method removal \
+    --pruning_strategy inverse \
+    --prune_mlp \
+    --save_model \
+    --test_after_prune \
+    --finetune \
+    --finetune_lr 1e-5 \
+    --finetune_epochs 1 \
+    --finetune_samples 500 \
+    --finetune_batch_size 1 \
+    --finetune_seq_len 512
+```
+
+**预期效果**：
+- 剪枝后 PPL 可能上升 5-10%
+- 微调后 PPL 恢复到接近原始水平
+- 最终获得更小更快且性能良好的模型
+
+**输出文件**：
+- `pytorch_model.bin` - 剪枝后的模型
+- `pytorch_model_finetuned.bin` - 微调后的模型（最终版本）
+
+---
+
+### 场景 8：快速微调（小规模）
+
+```bash
+python llama3_unbalanced_pruning_v3_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name llama3_quick_finetune \
+    --pruning_ratio 0.25 \
+    --importance_samples 20 \
+    --num_examples 5 \
+    --prune_mlp \
+    --save_model \
+    --test_after_prune \
+    --finetune \
+    --finetune_samples 100 \
+    --finetune_batch_size 1
+```
+
+**说明**：适合快速验证微调效果，使用较少样本
+
+---
+
+### 场景 9：激进剪枝 + 多轮微调
+
+```bash
+python llama3_unbalanced_pruning_v3_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name llama3_30pct_finetuned \
+    --pruning_ratio 0.30 \
+    --min_pruning_rate 0.20 \
+    --max_pruning_rate 0.60 \
+    --alpha 1.5 \
+    --prune_mlp \
+    --save_model \
+    --test_after_prune \
+    --finetune \
+    --finetune_lr 2e-5 \
+    --finetune_epochs 2 \
+    --finetune_samples 1000 \
+    --finetune_batch_size 1
+```
+
+**说明**：
+- 更高的剪枝率（30%）
+- 更长的微调（2轮，1000样本）
+- 适合追求最大压缩率的场景
+
+---
+
 ## 输出文件
 
 ### 日志和模型保存位置
@@ -252,7 +342,8 @@ python llama3_unbalanced_pruning_v3_gqa_aware.py \
 prune_log/
 └── {save_ckpt_log_name}/
     ├── description.txt                    # 配置参数
-    ├── pytorch_model.bin                  # 最佳模型（如果使用 --save_model）
+    ├── pytorch_model.bin                  # 剪枝后的模型（如果使用 --save_model）
+    ├── pytorch_model_finetuned.bin        # 微调后的模型（如果使用 --finetune）
     ├── layer_importance_config.json       # 层重要性配置
     ├── pruning_strategy.png               # 剪枝策略可视化
     └── {timestamp}/
@@ -403,16 +494,25 @@ python llama3_unbalanced_pruning_v3_gqa_aware.py \
 ### 标准配置（25% 剪枝）
 
 - **参数减少**：20-25%
-- **PPL 退化**：<5% (vs 基线)
+- **剪枝后 PPL 退化**：<5% (vs 基线)
 - **运行时间**：~1-2 小时（取决于硬件）
 - **内存需求**：~24GB VRAM
 
-### 对比旧方法
+### 标准配置 + 微调（25% 剪枝 + 微调）
+
+- **参数减少**：20-25%
+- **剪枝后 PPL**：上升 5-10%
+- **微调后 PPL**：恢复到接近基线（<2% 退化）
+- **微调时间**：额外 ~30-60 分钟
+- **总运行时间**：~2-3 小时
+
+### 对比不同方法
 
 | 方法 | PPL (WikiText-2) | 参数减少 | GQA 保持 |
 |------|------------------|----------|----------|
 | 旧方法 (torch_pruning) | 718,107 ❌ | 25% | ❌ 破坏 |
-| 新方法 (GQA-aware) | ~12-13 ✅ | 25% | ✅ 保持 4:1 |
+| 新方法 (仅剪枝) | ~12-13 ✅ | 25% | ✅ 保持 4:1 |
+| 新方法 (剪枝+微调) | ~11-12 ✅ | 25% | ✅ 保持 4:1 |
 
 ---
 

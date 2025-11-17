@@ -101,6 +101,20 @@ def main():
     parser.add_argument('--prune_mlp', action='store_true',
                        help='是否也剪枝MLP（默认只剪Attention）')
 
+    # 微调参数
+    parser.add_argument('--finetune', action='store_true',
+                       help='剪枝后是否进行微调')
+    parser.add_argument('--finetune_lr', type=float, default=1e-5,
+                       help='微调学习率')
+    parser.add_argument('--finetune_epochs', type=int, default=1,
+                       help='微调轮数')
+    parser.add_argument('--finetune_samples', type=int, default=500,
+                       help='微调使用的样本数量')
+    parser.add_argument('--finetune_batch_size', type=int, default=1,
+                       help='微调batch size')
+    parser.add_argument('--finetune_seq_len', type=int, default=512,
+                       help='微调序列长度')
+
     args = parser.parse_args()
 
     # 自动选择最优 GPU
@@ -407,23 +421,144 @@ def main():
     all_4_to_1 = all(ratio == 4 for ratio in gqa_ratios)
     logger.log(f"\nGQA比例验证: {'✅ 所有层保持4:1' if all_4_to_1 else '❌ 存在不一致'}")
 
-    # ==================== 步骤8: 评估PPL ====================
+    # ==================== 步骤8: 评估剪枝后PPL ====================
+    ppl_before_finetune = None
     if args.test_after_prune:
         logger.log("\n" + "=" * 60)
-        logger.log("步骤8: 评估困惑度")
+        logger.log("步骤8: 评估剪枝后困惑度")
         logger.log("=" * 60)
 
         model.to(args.device)
         model.eval()
 
-        ppl = PPLMetric(model, tokenizer, ['wikitext2'],
+        ppl_before_finetune = PPLMetric(model, tokenizer, ['wikitext2'],
                        seq_len=args.max_seq_len, device=args.device)
-        logger.log(f"\n剪枝后 PPL: {ppl}")
+        logger.log(f"\n剪枝后 PPL: {ppl_before_finetune}")
     else:
         logger.log("\n⚠️ 未启用 --test_after_prune，跳过PPL评估")
 
+    # ==================== 步骤9: 微调剪枝后的模型 ====================
+    if args.finetune:
+        logger.log("\n" + "=" * 60)
+        logger.log("步骤9: 微调剪枝后的模型")
+        logger.log("=" * 60)
+
+        # 加载微调数据
+        logger.log(f"从 wikitext2 训练集加载 {args.finetune_samples} 个样本...")
+        finetune_data = get_examples('wikitext', tokenizer,
+                                     num_samples=args.finetune_samples,
+                                     seq_len=args.finetune_seq_len,
+                                     split='train')
+        logger.log(f"✅ 微调数据加载完成，shape: {finetune_data.shape}")
+
+        # 准备优化器
+        model.train()
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.finetune_lr)
+
+        logger.log(f"\n微调配置:")
+        logger.log(f"  学习率: {args.finetune_lr}")
+        logger.log(f"  轮数: {args.finetune_epochs}")
+        logger.log(f"  样本数: {args.finetune_samples}")
+        logger.log(f"  Batch size: {args.finetune_batch_size}")
+        logger.log(f"  序列长度: {args.finetune_seq_len}")
+
+        # 微调循环
+        for epoch in range(args.finetune_epochs):
+            logger.log(f"\n开始第 {epoch + 1}/{args.finetune_epochs} 轮微调...")
+
+            total_loss = 0
+            num_batches = (len(finetune_data) + args.finetune_batch_size - 1) // args.finetune_batch_size
+
+            for batch_idx in range(num_batches):
+                # 获取batch
+                start_idx = batch_idx * args.finetune_batch_size
+                end_idx = min(start_idx + args.finetune_batch_size, len(finetune_data))
+                batch = finetune_data[start_idx:end_idx].to(args.device)
+
+                # 前向传播
+                outputs = model(batch, labels=batch)
+                loss = outputs.loss
+
+                # 反向传播
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                total_loss += loss.item()
+
+                # 每10%进度打印一次
+                if (batch_idx + 1) % max(1, num_batches // 10) == 0:
+                    avg_loss = total_loss / (batch_idx + 1)
+                    progress = (batch_idx + 1) / num_batches * 100
+                    logger.log(f"  进度: {progress:.0f}% | 平均Loss: {avg_loss:.4f}")
+
+            avg_epoch_loss = total_loss / num_batches
+            logger.log(f"✅ 第 {epoch + 1} 轮完成，平均Loss: {avg_epoch_loss:.4f}")
+
+        logger.log("\n✅ 微调完成！")
+
+    else:
+        logger.log("\n⚠️ 未启用 --finetune，跳过微调")
+
+    # ==================== 步骤10: 保存微调后的模型 ====================
+    if args.finetune and args.save_model:
+        logger.log("\n" + "=" * 60)
+        logger.log("步骤10: 保存微调后的模型")
+        logger.log("=" * 60)
+
+        model.half()
+        finetuned_path = logger.best_checkpoint_path.replace('.bin', '_finetuned.bin')
+
+        save_dict = {
+            'model': model,
+            'tokenizer': tokenizer,
+            'layer_pruning_rates': layer_pruning_rates,
+            'layer_importance': layer_importance,
+            'pruning_method': 'gqa_aware_taylor',
+            'finetuned': True,
+            'finetune_config': {
+                'lr': args.finetune_lr,
+                'epochs': args.finetune_epochs,
+                'samples': args.finetune_samples,
+                'batch_size': args.finetune_batch_size,
+            },
+            'config': args.__dict__
+        }
+
+        torch.save(save_dict, finetuned_path)
+        logger.log(f"✅ 微调后模型已保存到: {finetuned_path}")
+
+    # ==================== 步骤11: 评估微调后PPL ====================
+    if args.finetune and args.test_after_prune:
+        logger.log("\n" + "=" * 60)
+        logger.log("步骤11: 评估微调后困惑度")
+        logger.log("=" * 60)
+
+        model.to(args.device)
+        model.eval()
+
+        ppl_after_finetune = PPLMetric(model, tokenizer, ['wikitext2'],
+                                       seq_len=args.max_seq_len, device=args.device)
+        logger.log(f"\n微调后 PPL: {ppl_after_finetune}")
+
+        # 对比剪枝前后和微调前后的变化
+        logger.log("\n" + "=" * 60)
+        logger.log("性能对比总结")
+        logger.log("=" * 60)
+        if ppl_before_finetune:
+            logger.log(f"剪枝后（微调前）: {ppl_before_finetune}")
+            logger.log(f"微调后: {ppl_after_finetune}")
+
+            # 计算改善百分比
+            wikitext_key = 'wikitext2 (wikitext-2-raw-v1)'
+            if wikitext_key in ppl_before_finetune and wikitext_key in ppl_after_finetune:
+                before_val = ppl_before_finetune[wikitext_key]
+                after_val = ppl_after_finetune[wikitext_key]
+                improvement = (before_val - after_val) / before_val * 100
+                logger.log(f"PPL 改善: {improvement:.2f}%")
+
     logger.log("\n" + "=" * 60)
-    logger.log("✅ 剪枝流程完成！")
+    logger.log("✅ 完整流程完成！")
     logger.log("=" * 60)
 
 
