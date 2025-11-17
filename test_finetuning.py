@@ -35,6 +35,8 @@ def main():
     parser.add_argument('--method', type=str, default='full',
                        choices=['full', 'lora'],
                        help='微调方法')
+    parser.add_argument('--use_lora', action='store_true',
+                       help='使用LoRA微调（等同于--method lora）')
     parser.add_argument('--lr', type=float, default=1e-5,
                        help='学习率')
     parser.add_argument('--epochs', type=int, default=1,
@@ -53,6 +55,18 @@ def main():
                        help='预热步数')
     parser.add_argument('--weight_decay', type=float, default=0.01,
                        help='权重衰减')
+
+    # LoRA专用参数
+    parser.add_argument('--lora_r', type=int, default=8,
+                       help='LoRA秩（越大效果越好但参数越多，建议4-16）')
+    parser.add_argument('--lora_alpha', type=int, default=16,
+                       help='LoRA缩放系数（通常设为r的2倍）')
+    parser.add_argument('--lora_dropout', type=float, default=0.05,
+                       help='LoRA dropout率')
+    parser.add_argument('--lora_target_attention', action='store_true', default=False,
+                       help='LoRA是否应用到Attention层（q,k,v,o）')
+    parser.add_argument('--lora_target_mlp', action='store_true', default=False,
+                       help='LoRA是否应用到MLP层（gate,up,down）')
 
     # 测试参数
     parser.add_argument('--test_before', action='store_true',
@@ -114,13 +128,19 @@ def main():
     logger.log("=" * 60)
 
     # 创建微调器
-    use_lora = (args.method == 'lora')
+    use_lora = (args.method == 'lora' or args.use_lora)
+
     finetuner = FineTuner(
         model,
         tokenizer,
         device=device,
         logger=logger,
-        use_lora=use_lora
+        use_lora=use_lora,
+        lora_r=args.lora_r if use_lora else 8,
+        lora_alpha=args.lora_alpha if use_lora else 16,
+        lora_dropout=args.lora_dropout if use_lora else 0.05,
+        lora_target_attention=args.lora_target_attention if use_lora else True,
+        lora_target_mlp=args.lora_target_mlp if use_lora else True
     )
 
     # 执行微调

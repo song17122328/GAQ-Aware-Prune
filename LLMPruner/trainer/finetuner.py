@@ -285,20 +285,20 @@ class FineTuner:
             'final_loss': epoch_losses[-1] if epoch_losses else None
         }
 
-    def _setup_lora(self, lora_r: int = 8, lora_alpha: int = 16, lora_dropout: float = 0.05,
-                    target_attention: bool = True, target_mlp: bool = True):
+    def _setup_lora(self):
         """
         配置LoRA（如果PEFT可用）
-
-        Args:
-            lora_r: LoRA秩
-            lora_alpha: LoRA缩放系数
-            lora_dropout: LoRA dropout率
-            target_attention: 是否对Attention层应用LoRA
-            target_mlp: 是否对MLP层应用LoRA
+        使用 __init__ 中存储的 LoRA 配置参数
         """
         try:
             from peft import LoraConfig, get_peft_model, TaskType
+
+            # 使用存储在 self 中的配置
+            lora_r = self.lora_r
+            lora_alpha = self.lora_alpha
+            lora_dropout = self.lora_dropout
+            target_attention = self.lora_target_attention
+            target_mlp = self.lora_target_mlp
 
             # 构建target_modules列表
             target_modules = []
