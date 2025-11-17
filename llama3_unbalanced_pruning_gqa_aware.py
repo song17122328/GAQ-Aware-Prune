@@ -491,7 +491,95 @@ def main():
     else:
         mlp_layer_pruning_rates = {i: 0.0 for i in mlp_param_counts.keys()}
 
-    logger.log(f"\nAttention 剪枝率统计:")
+    # ========== GQA 离散化映射和 MLP 修正 ==========
+    if attn_pruned_params > 0:
+        logger.log(f"\n" + "=" * 60)
+        logger.log("GQA 离散化映射和 MLP 修正过程:")
+        logger.log("=" * 60)
+
+        # 获取第一层的KV头数量（所有层相同）
+        num_kv_heads = model.model.layers[0].self_attn.k_proj.out_features // args.head_dim
+        logger.log(f"\n每层KV头数量: {num_kv_heads}")
+        logger.log(f"GQA可用剪枝档位: {[i/num_kv_heads for i in range(num_kv_heads+1)]}")
+
+        # 映射Attention剪枝率到离散档位
+        logger.log(f"\n1. 映射 Attention 各层剪枝率到 GQA 离散档位:")
+        logger.log(f"   {'Layer':<8} {'原始剪枝率':<12} {'映射后剪枝率':<14} {'剪枝KV头数':<12}")
+        logger.log(f"   {'-'*8} {'-'*12} {'-'*14} {'-'*12}")
+
+        attn_layer_pruning_rates_discretized = {}
+        for layer_idx, original_rate in attn_layer_pruning_rates.items():
+            # 计算要剪枝的KV头数量（四舍五入到最近的整数）
+            num_pruned_kv_heads = round(original_rate * num_kv_heads)
+            num_pruned_kv_heads = max(0, min(num_kv_heads, num_pruned_kv_heads))  # 限制在 [0, num_kv_heads]
+
+            # 映射后的剪枝率
+            discretized_rate = num_pruned_kv_heads / num_kv_heads
+            attn_layer_pruning_rates_discretized[layer_idx] = discretized_rate
+
+            logger.log(f"   {layer_idx:<8} {original_rate:<12.4f} {discretized_rate:<14.4f} {num_pruned_kv_heads:<12}")
+
+        # 计算映射后的实际Attention剪枝量
+        logger.log(f"\n2. 计算映射后的实际 Attention 剪枝量:")
+        actual_attn_pruned_params = sum(
+            attn_layer_pruning_rates_discretized[i] * attention_param_counts[i]
+            for i in attn_layer_pruning_rates_discretized.keys()
+        )
+        actual_attn_pruned_params = int(actual_attn_pruned_params)
+
+        logger.log(f"   原始计划剪枝量: {attn_pruned_params:,}")
+        logger.log(f"   映射后实际剪枝量: {actual_attn_pruned_params:,}")
+
+        deviation = attn_pruned_params - actual_attn_pruned_params
+        logger.log(f"   偏差量: {deviation:,} ({deviation/attn_pruned_params*100:+.2f}%)")
+
+        # 将偏差补偿到MLP
+        logger.log(f"\n3. 将偏差补偿到 MLP:")
+        logger.log(f"   MLP 原始目标剪枝量: {mlp_pruned_params:,}")
+        mlp_pruned_params_adjusted = mlp_pruned_params + deviation
+        logger.log(f"   MLP 修正后目标剪枝量: {mlp_pruned_params_adjusted:,} (补偿 {deviation:+,})")
+
+        # 检查修正后的MLP剪枝量是否有效
+        if mlp_pruned_params_adjusted < 0:
+            logger.log(f"   ⚠️  修正后的 MLP 剪枝量为负，设为 0")
+            mlp_pruned_params_adjusted = 0
+        elif mlp_pruned_params_adjusted > total_mlp_params:
+            logger.log(f"   ⚠️  修正后的 MLP 剪枝量超过总量，设为 {total_mlp_params:,}")
+            mlp_pruned_params_adjusted = total_mlp_params
+
+        # 重新计算MLP层级剪枝率
+        if mlp_pruned_params_adjusted > 0:
+            logger.log(f"\n4. 重新计算 MLP 各层剪枝率:")
+            mlp_layer_pruning_rates = calculator.compute_layer_pruning_rates_by_target_params(
+                layer_param_counts=mlp_param_counts,
+                target_total_pruned_params=mlp_pruned_params_adjusted,
+                strategy=args.pruning_strategy,
+                alpha=args.layer_importance_weight,
+                min_rate=args.min_pruning_rate,
+                max_rate=args.max_pruning_rate,
+                use_log_transform=True
+            )
+            logger.log(f"   ✅ MLP 层级剪枝率已根据修正后的目标量重新计算")
+        else:
+            mlp_layer_pruning_rates = {i: 0.0 for i in mlp_param_counts.keys()}
+            logger.log(f"   MLP 剪枝量为 0，所有层剪枝率设为 0")
+
+        # 更新Attention剪枝率为离散化后的值
+        attn_layer_pruning_rates = attn_layer_pruning_rates_discretized
+
+        # 更新实际剪枝参数量
+        attn_pruned_params = actual_attn_pruned_params
+        mlp_pruned_params = mlp_pruned_params_adjusted
+
+        logger.log(f"\n" + "=" * 60)
+        logger.log("修正后的最终剪枝配置:")
+        logger.log("=" * 60)
+        logger.log(f"Attention 实际剪枝量: {attn_pruned_params:,} ({attn_pruned_params/total_attention_params:.2%} of Attention)")
+        logger.log(f"MLP 实际剪枝量: {mlp_pruned_params:,} ({mlp_pruned_params/total_mlp_params:.2%} of MLP)")
+        logger.log(f"总计剪枝量: {attn_pruned_params + mlp_pruned_params:,}")
+        logger.log("=" * 60)
+
+    logger.log(f"\nAttention 剪枝率统计 (离散化后):")
     logger.log(f"  平均: {np.mean(list(attn_layer_pruning_rates.values())):.4f}")
     logger.log(f"  最小: {np.min(list(attn_layer_pruning_rates.values())):.4f}")
     logger.log(f"  最大: {np.max(list(attn_layer_pruning_rates.values())):.4f}")
