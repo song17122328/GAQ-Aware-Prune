@@ -242,9 +242,10 @@ if __name__ == "__main__":
     print("测试 PPLMetric 类...")
 
     # 使用一个小模型进行测试
-    print("\n加载测试模型 (gpt2)...")
-    model = AutoModelForCausalLM.from_pretrained("gpt2")
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    print(f"\n加载测试模型 (Llama-3-8B-Instruct)...")
+    model_name = "/newdata/LLMs/Llama-3-8B-Instruct"
+    model = AutoModelForCausalLM.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     print("\n计算 wikitext2 PPL...")
     try:
@@ -252,7 +253,7 @@ if __name__ == "__main__":
             model,
             tokenizer,
             datasets=['wikitext2'],
-            seq_len=512,
+            seq_len=128,
             device='cuda' if torch.cuda.is_available() else 'cpu'
         )
 
