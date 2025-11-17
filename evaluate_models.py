@@ -5,7 +5,7 @@
 
 使用方法：
 python evaluate_models.py \
-    --original_model /path/to/Llama-3-8B-Instruct \
+    --original_model /newdata/LLMs/Llama-3-8B-Instruct \
     --pruned_model prune_log/experiment/pytorch_model.bin \
     --finetuned_model prune_log/experiment/pytorch_model_finetuned.bin \
     --seq_len 128

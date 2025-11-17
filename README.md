@@ -17,7 +17,7 @@ GQA（Grouped Query Attention）感知的 LLaMA-3 模型剪枝工具
 
 ```bash
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/Llama-3-8B-Instruct \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name llama3_pruned_25pct \
     --pruning_ratio 0.25 \
     --prune_mlp \
@@ -72,7 +72,7 @@ python test_finetuning.py \
 
 ```bash
 python evaluate_models.py \
-    --original_model /path/to/Llama-3-8B-Instruct \
+    --original_model /newdata/LLMs/Llama-3-8B-Instruct \
     --pruned_model prune_log/llama3_pruned_25pct/pytorch_model.bin \
     --finetuned_model prune_log/lora_finetune/pytorch_model_finetuned.bin \
     --seq_len 512 \
@@ -111,7 +111,7 @@ PPL 对比结果
 ```bash
 # 步骤1: 剪枝
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/Llama-3-8B-Instruct \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name exp_25pct \
     --pruning_ratio 0.25 \
     --prune_mlp \
@@ -141,7 +141,7 @@ python evaluate_models.py \
 
 ```bash
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/Llama-3-8B-Instruct \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name exp_integrated \
     --pruning_ratio 0.25 \
     --prune_mlp \
@@ -167,7 +167,7 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 ```bash
 # 剪枝测试（只处理部分层）
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/model \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name debug_test \
     --pruning_ratio 0.25 \
     --layer_start 10 \
@@ -191,7 +191,7 @@ python test_finetuning.py \
 ```bash
 # 剪枝
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/model \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name production \
     --pruning_ratio 0.25 \
     --importance_method removal \
@@ -355,14 +355,14 @@ done
 ```bash
 # 首次运行：分析并保存
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/model \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name cache_importance \
     --pruning_ratio 0.25 \
     --save_model
 
 # 后续运行：直接使用缓存
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/model \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name exp2 \
     --pruning_ratio 0.30 \
     --skip_importance_analysis \

@@ -410,7 +410,7 @@ get_examples_from_text(texts, tokenizer, seq_len=128)
 
 ```bash
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/Llama-3-8B-Instruct \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name llama3_pruned_25pct \
     --pruning_ratio 0.25 \
     --importance_method removal \
@@ -428,7 +428,7 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 
 ```bash
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/Llama-3-8B-Instruct \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name debug_test \
     --pruning_ratio 0.25 \
     --importance_samples 10 \
@@ -578,7 +578,7 @@ While this repository doesn't have formal unit tests, you should validate:
 ```bash
 # Test 1: Basic pruning (no save, quick)
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/model \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name test_basic \
     --pruning_ratio 0.25 \
     --importance_samples 10 \
@@ -588,7 +588,7 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 
 # Test 2: Full pipeline with save
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/model \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name test_full \
     --pruning_ratio 0.25 \
     --prune_mlp \
@@ -597,7 +597,7 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 
 # Test 3: Fine-tuning
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/model \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name test_finetune \
     --pruning_ratio 0.25 \
     --save_model \
@@ -929,7 +929,7 @@ torch.save(quantized_model.state_dict(), 'pruned_quantized.bin')
 ```bash
 # Full pipeline (pruning + fine-tuning)
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/model \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name experiment_name \
     --pruning_ratio 0.25 \
     --prune_mlp \
@@ -940,7 +940,7 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 
 # Debug mode (fast)
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/model \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name debug \
     --pruning_ratio 0.25 \
     --importance_samples 10 \
@@ -950,7 +950,7 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 
 # Reuse layer importance
 python llama3_unbalanced_pruning_gqa_aware.py \
-    --base_model /path/to/model \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --skip_importance_analysis \
     --importance_config prune_log/previous_run/layer_importance_config.json \
     --pruning_ratio 0.30 \

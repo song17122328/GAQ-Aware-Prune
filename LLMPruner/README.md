@@ -28,7 +28,7 @@ LLMPruner/
 from LLMPruner.datasets.example_samples import get_examples
 from transformers import AutoTokenizer
 
-tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3-8B-Instruct")
+tokenizer = AutoTokenizer.from_pretrained("/newdata/LLMs/Llama-3-8B-Instruct")
 
 # 从wikitext数据集加载10个样本，每个长度为64
 examples = get_examples('wikitext', tokenizer, num_samples=10, seq_len=64)
@@ -65,8 +65,8 @@ calib_data = get_calibration_data('wikitext', tokenizer, num_samples=128)
 from LLMPruner.evaluator.ppl import PPLMetric
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3-8B-Instruct")
-tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3-8B-Instruct")
+model = AutoModelForCausalLM.from_pretrained("/newdata/LLMs/Llama-3-8B-Instruct")
+tokenizer = AutoTokenizer.from_pretrained("/newdata/LLMs/Llama-3-8B-Instruct")
 
 # 评估 wikitext2 数据集
 ppl_metric = PPLMetric(
@@ -161,8 +161,8 @@ from LLMPruner.datasets.example_samples import get_examples
 from LLMPruner.evaluator.ppl import PPLMetric
 
 # 1. 加载模型
-model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3-8B-Instruct")
-tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3-8B-Instruct")
+model = AutoModelForCausalLM.from_pretrained("/newdata/LLMs/Llama-3-8B-Instruct")
+tokenizer = AutoTokenizer.from_pretrained("/newdata/LLMs/Llama-3-8B-Instruct")
 
 # 2. 评估原始PPL
 print("评估原始模型...")
