@@ -39,6 +39,68 @@ from LLMPruner import (
 )
 
 
+def count_attention_params(layer):
+    """统计单层 Attention 的参数量"""
+    params = 0
+    params += layer.self_attn.q_proj.weight.numel()
+    params += layer.self_attn.k_proj.weight.numel()
+    params += layer.self_attn.v_proj.weight.numel()
+    params += layer.self_attn.o_proj.weight.numel()
+
+    # bias（如果有）
+    if layer.self_attn.q_proj.bias is not None:
+        params += layer.self_attn.q_proj.bias.numel()
+    if layer.self_attn.k_proj.bias is not None:
+        params += layer.self_attn.k_proj.bias.numel()
+    if layer.self_attn.v_proj.bias is not None:
+        params += layer.self_attn.v_proj.bias.numel()
+    if layer.self_attn.o_proj.bias is not None:
+        params += layer.self_attn.o_proj.bias.numel()
+
+    return params
+
+
+def count_mlp_params(layer):
+    """统计单层 MLP 的参数量"""
+    params = 0
+    params += layer.mlp.gate_proj.weight.numel()
+    params += layer.mlp.up_proj.weight.numel()
+    params += layer.mlp.down_proj.weight.numel()
+
+    # bias（如果有）
+    if layer.mlp.gate_proj.bias is not None:
+        params += layer.mlp.gate_proj.bias.numel()
+    if layer.mlp.up_proj.bias is not None:
+        params += layer.mlp.up_proj.bias.numel()
+    if layer.mlp.down_proj.bias is not None:
+        params += layer.mlp.down_proj.bias.numel()
+
+    return params
+
+
+def compute_component_param_counts(model, layer_start=0, layer_end=None):
+    """
+    统计所有层的 Attention 和 MLP 参数量
+
+    Returns:
+        attention_params: Dict[layer_idx, param_count]
+        mlp_params: Dict[layer_idx, param_count]
+    """
+    num_layers = len(model.model.layers)
+    if layer_end is None:
+        layer_end = num_layers
+
+    attention_params = {}
+    mlp_params = {}
+
+    for layer_idx in range(layer_start, min(layer_end, num_layers)):
+        layer = model.model.layers[layer_idx]
+        attention_params[layer_idx] = count_attention_params(layer)
+        mlp_params[layer_idx] = count_mlp_params(layer)
+
+    return attention_params, mlp_params
+
+
 def main():
     parser = argparse.ArgumentParser(description='Llama-3 GQA-Aware非均衡结构化剪枝')
 
@@ -51,6 +113,8 @@ def main():
     # 剪枝参数
     parser.add_argument('--pruning_ratio', type=float, default=0.25,
                        help='目标剪枝率（整体平均）')
+    parser.add_argument('--pruning_distribution', type=str, default='5:5',
+                       help='Attention和MLP的剪枝参数量比例（例如: 5:5表示各占一半, 10:0表示只剪MLP, 0:10表示只剪Attention）')
 
     # 层重要度评估
     parser.add_argument('--layer_importance_method', type=str, default='removal',
@@ -102,14 +166,6 @@ def main():
     parser.add_argument('--gqa_ratio', type=int, default=4,
                        help='Q:KV比例（Llama-3默认4:1）')
 
-    # 剪枝目标选择
-    parser.add_argument('--prune_attention', action='store_true', default=True,
-                       help='是否剪枝Attention层（默认True）')
-    parser.add_argument('--prune_mlp', action='store_true',
-                       help='是否剪枝MLP层（默认False）')
-    parser.add_argument('--no_prune_attention', dest='prune_attention', action='store_false',
-                       help='禁用Attention剪枝（用于只剪枝MLP的场景）')
-
     # 微调参数
     parser.add_argument('--finetune', action='store_true',
                        help='剪枝后是否进行微调')
@@ -149,6 +205,20 @@ def main():
 
     args = parser.parse_args()
 
+    # 解析 pruning_distribution 参数
+    try:
+        attn_ratio, mlp_ratio = map(int, args.pruning_distribution.split(':'))
+        if attn_ratio < 0 or mlp_ratio < 0:
+            raise ValueError("剪枝比例不能为负数")
+        if attn_ratio == 0 and mlp_ratio == 0:
+            raise ValueError("Attention 和 MLP 的剪枝比例不能同时为0")
+    except ValueError as e:
+        raise ValueError(f"无效的 pruning_distribution 参数 '{args.pruning_distribution}': {e}")
+
+    args.attn_ratio = attn_ratio
+    args.mlp_ratio = mlp_ratio
+    total_ratio = attn_ratio + mlp_ratio
+
     # 自动选择最优 GPU
     try:
         from LLMPruner.utils.get_best_gpu import get_best_gpu
@@ -158,6 +228,14 @@ def main():
 
     print(f"自动选择设备: {device}")
     args.device = device
+
+    # 输出剪枝配置
+    print(f"剪枝配置:")
+    print(f"  总剪枝率: {args.pruning_ratio:.2%}")
+    print(f"  Attention:MLP 剪枝比例 = {attn_ratio}:{mlp_ratio}")
+    if total_ratio > 0:
+        print(f"    -> Attention 占总剪枝量的 {attn_ratio/total_ratio:.1%}")
+        print(f"    -> MLP 占总剪枝量的 {mlp_ratio/total_ratio:.1%}")
 
     # 创建日志
     logger = LoggerWithDepth(
@@ -275,38 +353,94 @@ def main():
         layer_pruning_rates = calculator.load_pruning_rates(args.layer_importance_config)
         layer_importance = {i: 1.0 for i in range(num_layers)}
 
-    # ==================== 步骤3: 计算各层剪枝率 ====================
+    # ==================== 步骤3: 统计参数量并计算剪枝策略 ====================
     logger.log("\n" + "=" * 60)
-    logger.log("步骤3: 计算各层剪枝率")
+    logger.log("步骤3: 统计参数量并计算剪枝策略")
     logger.log("=" * 60)
 
-    calculator = UnbalancedStructuredPruningCalculator(layer_importance, num_layers)
-
-    layer_pruning_rates = calculator.compute_layer_pruning_rates(
-        target_overall_rate=args.pruning_ratio,
-        strategy=args.pruning_strategy,
-        alpha=args.layer_importance_weight,
-        min_rate=args.min_pruning_rate,
-        max_rate=args.max_pruning_rate,
-        use_log_transform=True
+    # 统计 Attention 和 MLP 的参数量
+    attention_param_counts, mlp_param_counts = compute_component_param_counts(
+        model, args.layer_start, args.layer_end
     )
 
-    stats = calculator.verify_average_pruning_rate(layer_pruning_rates)
-    logger.log(f"\n剪枝率统计:")
-    logger.log(f"  平均剪枝率: {stats['average_pruning_rate']:.4f}")
-    logger.log(f"  标准差: {stats['std_pruning_rate']:.4f}")
-    logger.log(f"  最小剪枝率: {stats['min_pruning_rate']:.4f}")
-    logger.log(f"  最大剪枝率: {stats['max_pruning_rate']:.4f}")
+    total_attention_params = sum(attention_param_counts.values())
+    total_mlp_params = sum(mlp_param_counts.values())
+    total_prunable_params = total_attention_params + total_mlp_params
 
-    # 不再打印所有32层的详细剪枝率，仅保存到JSON配置文件中
+    logger.log(f"\n参与剪枝的层范围: [{args.layer_start}, {args.layer_end})")
+    logger.log(f"Attention 总参数量: {total_attention_params:,} ({total_attention_params/total_prunable_params:.1%})")
+    logger.log(f"MLP 总参数量: {total_mlp_params:,} ({total_mlp_params/total_prunable_params:.1%})")
+    logger.log(f"可剪枝总参数量: {total_prunable_params:,}")
+
+    # 根据 pruning_distribution 分配剪枝参数量
+    total_pruned_params = int(total_prunable_params * args.pruning_ratio)
+    attn_pruned_params = int(total_pruned_params * args.attn_ratio / (args.attn_ratio + args.mlp_ratio))
+    mlp_pruned_params = int(total_pruned_params * args.mlp_ratio / (args.attn_ratio + args.mlp_ratio))
+
+    logger.log(f"\n总目标剪枝参数量: {total_pruned_params:,} ({args.pruning_ratio:.1%})")
+    logger.log(f"  -> Attention 目标剪枝量: {attn_pruned_params:,} ({attn_pruned_params/total_attention_params:.2%} of Attention)")
+    logger.log(f"  -> MLP 目标剪枝量: {mlp_pruned_params:,} ({mlp_pruned_params/total_mlp_params:.2%} of MLP)")
+
+    # 创建计算器
+    calculator = UnbalancedStructuredPruningCalculator(layer_importance, num_layers)
+
+    # 分别计算 Attention 和 MLP 的层级剪枝率
+    if attn_pruned_params > 0:
+        attn_layer_pruning_rates = calculator.compute_layer_pruning_rates_by_target_params(
+            layer_param_counts=attention_param_counts,
+            target_total_pruned_params=attn_pruned_params,
+            strategy=args.pruning_strategy,
+            alpha=args.layer_importance_weight,
+            min_rate=args.min_pruning_rate,
+            max_rate=args.max_pruning_rate,
+            use_log_transform=True
+        )
+    else:
+        attn_layer_pruning_rates = {i: 0.0 for i in attention_param_counts.keys()}
+
+    if mlp_pruned_params > 0:
+        mlp_layer_pruning_rates = calculator.compute_layer_pruning_rates_by_target_params(
+            layer_param_counts=mlp_param_counts,
+            target_total_pruned_params=mlp_pruned_params,
+            strategy=args.pruning_strategy,
+            alpha=args.layer_importance_weight,
+            min_rate=args.min_pruning_rate,
+            max_rate=args.max_pruning_rate,
+            use_log_transform=True
+        )
+    else:
+        mlp_layer_pruning_rates = {i: 0.0 for i in mlp_param_counts.keys()}
+
+    logger.log(f"\nAttention 剪枝率统计:")
+    logger.log(f"  平均: {np.mean(list(attn_layer_pruning_rates.values())):.4f}")
+    logger.log(f"  最小: {np.min(list(attn_layer_pruning_rates.values())):.4f}")
+    logger.log(f"  最大: {np.max(list(attn_layer_pruning_rates.values())):.4f}")
+
+    logger.log(f"\nMLP 剪枝率统计:")
+    logger.log(f"  平均: {np.mean(list(mlp_layer_pruning_rates.values())):.4f}")
+    logger.log(f"  最小: {np.min(list(mlp_layer_pruning_rates.values())):.4f}")
+    logger.log(f"  最大: {np.max(list(mlp_layer_pruning_rates.values())):.4f}")
 
     # 保存配置
-    config_path = os.path.join(logger.log_dir, args.layer_importance_config)
-    calculator.save_pruning_rates(layer_pruning_rates, config_path)
+    config_path = os.path.join(logger.log_dir, 'pruning_strategy_config.json')
+    config = {
+        'attention_pruning_rates': {str(k): v for k, v in attn_layer_pruning_rates.items()},
+        'mlp_pruning_rates': {str(k): v for k, v in mlp_layer_pruning_rates.items()},
+        'layer_importance': {str(k): v for k, v in layer_importance.items()},
+        'pruning_distribution': args.pruning_distribution,
+        'target_pruning_ratio': args.pruning_ratio,
+        'attention_pruned_params': attn_pruned_params,
+        'mlp_pruned_params': mlp_pruned_params,
+        'total_attention_params': total_attention_params,
+        'total_mlp_params': total_mlp_params
+    }
+    with open(config_path, 'w') as f:
+        json.dump(config, f, indent=2)
+    logger.log(f"\n剪枝策略配置已保存到: {config_path}")
 
-    # 可视化
+    # 可视化（使用 Attention 的剪枝率作为示例）
     viz_path = os.path.join(logger.log_dir, 'pruning_strategy.png')
-    calculator.visualize_pruning_strategy(layer_pruning_rates, save_path=viz_path)
+    calculator.visualize_pruning_strategy(attn_layer_pruning_rates, save_path=viz_path)
 
     # ==================== 步骤4: GQA-Aware剪枝 ====================
     logger.log("\n" + "=" * 60)
@@ -315,16 +449,17 @@ def main():
 
     # 确定剪枝目标
     prune_targets = []
-    if args.prune_attention:
+    if attn_pruned_params > 0:
         prune_targets.append("Attention(GQA组级)")
-    if args.prune_mlp:
+    if mlp_pruned_params > 0:
         prune_targets.append("MLP")
 
     if not prune_targets:
-        logger.log("⚠️ 警告：未启用任何剪枝目标（--prune_attention 和 --prune_mlp 都为False）")
+        logger.log("⚠️ 警告：Attention 和 MLP 的目标剪枝量都为0")
         logger.log("跳过剪枝步骤\n")
     else:
         logger.log(f"剪枝目标: {', '.join(prune_targets)}")
+        logger.log(f"剪枝分布 (Attention:MLP) = {args.attn_ratio}:{args.mlp_ratio}")
         logger.log("使用Taylor Importance，保持4:1 Q:KV比例\n")
 
     # 只有在有剪枝目标时才执行剪枝
@@ -333,20 +468,24 @@ def main():
         example_prompts = all_samples[:args.channel_importance_samples, :64].to(args.device)
         logger.log(f"准备了 {args.channel_importance_samples} 个样本用于Taylor importance计算")
 
-        # 确定要剪枝的层
+        # 确定要剪枝的层（只要 Attention 或 MLP 的剪枝率 >= min_rate）
         pruning_layers = [i for i in range(args.layer_start, min(args.layer_end, num_layers))
-                         if layer_pruning_rates.get(i, 0.0) >= args.min_pruning_rate]
+                         if (attn_layer_pruning_rates.get(i, 0.0) >= args.min_pruning_rate or
+                             mlp_layer_pruning_rates.get(i, 0.0) >= args.min_pruning_rate)]
 
         logger.log(f"\n实际参与剪枝的层: {pruning_layers}")
-        logger.log(f"跳过的层（剪枝率<{args.min_pruning_rate}）: {[i for i in range(num_layers) if i not in pruning_layers]}\n")
+        logger.log(f"跳过的层: {[i for i in range(args.layer_start, min(args.layer_end, num_layers)) if i not in pruning_layers]}\n")
 
         # 记录已剪枝的层（用于禁用梯度计算）
         pruned_layer_indices = []
 
         # 逐层剪枝
         for layer_idx in pruning_layers:
-            rate = layer_pruning_rates[layer_idx]
-            logger.log(f"\n处理 Layer {layer_idx} (剪枝率: {rate:.2%})")
+            attn_rate = attn_layer_pruning_rates.get(layer_idx, 0.0)
+            mlp_rate = mlp_layer_pruning_rates.get(layer_idx, 0.0)
+
+            logger.log(f"\n处理 Layer {layer_idx}")
+            logger.log(f"  Attention 剪枝率: {attn_rate:.2%}, MLP 剪枝率: {mlp_rate:.2%}")
 
             layer = model.model.layers[layer_idx]
 
@@ -356,7 +495,10 @@ def main():
                     param.requires_grad = False
 
             # 计算梯度（如果需要）
-            if args.prune_attention or args.prune_mlp:
+            prune_attn = attn_rate >= args.min_pruning_rate
+            prune_mlp = mlp_rate >= args.min_pruning_rate
+
+            if prune_attn or prune_mlp:
                 model.zero_grad()
                 loss = model(example_prompts, labels=example_prompts).loss
                 loss.backward()
@@ -364,29 +506,29 @@ def main():
             # 初始化默认值
             num_q, num_kv = None, None
             target_channels = None
+            original_mlp_channels = None
 
-            # 计算 Attention importance（如果需要）
-            if args.prune_attention:
+            # 执行 Attention 剪枝
+            if prune_attn:
                 group_imp = compute_gqa_group_importance(layer, args.head_dim, args.gqa_ratio)
                 num_kv_heads = len(group_imp)
-                num_groups_to_prune = int(num_kv_heads * rate)
+                num_groups_to_prune = int(num_kv_heads * attn_rate)
                 target_num_kv_heads = max(1, num_kv_heads - num_groups_to_prune)
 
                 keep_indices, _ = select_gqa_groups_to_prune(group_imp, target_num_kv_heads)
                 num_q, num_kv = prune_attention_by_gqa_groups(layer, keep_indices, args.head_dim, args.gqa_ratio)
 
-            # 计算 MLP importance（如果需要）
-            if args.prune_mlp:
+            # 执行 MLP 剪枝
+            if prune_mlp:
                 gate_salience = (layer.mlp.gate_proj.weight * layer.mlp.gate_proj.weight.grad).abs().sum(1)
                 up_salience = (layer.mlp.up_proj.weight * layer.mlp.up_proj.weight.grad).abs().sum(1)
                 down_salience = (layer.mlp.down_proj.weight * layer.mlp.down_proj.weight.grad).abs().sum(0)
                 mlp_importance = gate_salience + up_salience + down_salience
 
-                # 执行 MLP 剪枝
-                num_channels = mlp_importance.shape[0]
-                num_channels_to_prune = int(num_channels * rate)
+                original_mlp_channels = mlp_importance.shape[0]
+                num_channels_to_prune = int(original_mlp_channels * mlp_rate)
                 num_channels_to_prune = (num_channels_to_prune // args.head_dim) * args.head_dim
-                target_channels = max(args.head_dim, num_channels - num_channels_to_prune)
+                target_channels = max(args.head_dim, original_mlp_channels - num_channels_to_prune)
 
                 _, sorted_indices = torch.sort(mlp_importance, descending=True)
                 keep_indices_mlp = sorted(sorted_indices[:target_channels].tolist())
@@ -405,20 +547,20 @@ def main():
                 layer.mlp.up_proj.out_features = target_channels
                 layer.mlp.down_proj.in_features = target_channels
 
-            # 输出日志（根据剪枝模式）
+            # 输出日志
             log_parts = []
-            if args.prune_attention:
+            if prune_attn:
                 log_parts.append(f"Attention: {32}Q:{8}KV → {num_q}Q:{num_kv}KV")
-            if args.prune_mlp:
-                log_parts.append(f"MLP: {mlp_importance.shape[0]}→{target_channels}")
+            if prune_mlp:
+                log_parts.append(f"MLP: {original_mlp_channels}→{target_channels}")
 
             if log_parts:
-                logger.log(f"  {', '.join(log_parts)}")
+                logger.log(f"  结果: {', '.join(log_parts)}")
             else:
-                logger.log(f"  ⚠️ 未剪枝任何组件（--prune_attention 和 --prune_mlp 都未启用）")
+                logger.log(f"  ⚠️ 跳过（剪枝率低于阈值）")
 
             # 清理
-            if args.prune_attention or args.prune_mlp:
+            if prune_attn or prune_mlp:
                 model.zero_grad()
                 for param in layer.parameters():
                     if param.grad is not None:
@@ -437,9 +579,13 @@ def main():
         save_dict = {
             'model': model,
             'tokenizer': tokenizer,
-            'layer_pruning_rates': layer_pruning_rates,
+            'attention_pruning_rates': attn_layer_pruning_rates,
+            'mlp_pruning_rates': mlp_layer_pruning_rates,
             'layer_importance': layer_importance,
-            'pruning_method': 'gqa_aware_taylor',
+            'pruning_method': 'gqa_aware_taylor_distributed',
+            'pruning_distribution': args.pruning_distribution,
+            'attention_pruned_params': attn_pruned_params,
+            'mlp_pruned_params': mlp_pruned_params,
             'config': args.__dict__
         }
 
@@ -562,12 +708,21 @@ def main():
         finetuned_path = logger.best_checkpoint_path.replace('.bin', '_finetuned.bin')
 
         # 使用 FineTuner 的保存方法
+        extra_info = args.__dict__.copy()
+        extra_info.update({
+            'attention_pruning_rates': attn_layer_pruning_rates,
+            'mlp_pruning_rates': mlp_layer_pruning_rates,
+            'pruning_distribution': args.pruning_distribution,
+            'attention_pruned_params': attn_pruned_params,
+            'mlp_pruned_params': mlp_pruned_params
+        })
+
         finetuner.save_finetuned_model(
             save_path=finetuned_path,
-            layer_pruning_rates=layer_pruning_rates,
+            layer_pruning_rates={'attention': attn_layer_pruning_rates, 'mlp': mlp_layer_pruning_rates},
             layer_importance=layer_importance,
             finetune_stats=finetune_stats,
-            extra_info=args.__dict__
+            extra_info=extra_info
         )
 
     # ==================== 步骤11: 评估微调后PPL ====================

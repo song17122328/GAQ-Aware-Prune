@@ -221,6 +221,96 @@ class UnbalancedStructuredPruningCalculator:
 
         return {idx: float(rate) for idx, rate in enumerate(pruning_rates)}
 
+    def compute_layer_pruning_rates_by_target_params(
+        self,
+        layer_param_counts: Dict[int, int],
+        target_total_pruned_params: int,
+        strategy: str = 'inverse',
+        alpha: float = 1.0,
+        min_rate: float = 0.0,
+        max_rate: float = 0.5,
+        use_log_transform: bool = True
+    ) -> Dict[int, float]:
+        """
+        根据目标总剪枝参数量计算各层剪枝率
+
+        与 compute_layer_pruning_rates 的区别：
+        - 输入是目标总剪枝参数量，而不是平均剪枝率
+        - 考虑了每层的参数量差异
+
+        Args:
+            layer_param_counts: 每层的参数量 {layer_idx: param_count}
+            target_total_pruned_params: 目标总剪枝参数量
+            strategy: 剪枝策略 ('inverse', 'proportional', 'uniform')
+            alpha: 重要性权重系数（越大层间差异越明显）
+            min_rate: 单层最小剪枝率
+            max_rate: 单层最大剪枝率
+            use_log_transform: 是否对重要性使用对数变换
+
+        Returns:
+            Dict[int, float]: 各层剪枝率 {layer_idx: pruning_rate}
+        """
+        if not layer_param_counts:
+            raise ValueError("layer_param_counts 不能为空")
+
+        layer_indices = sorted(layer_param_counts.keys())
+        param_counts = np.array([layer_param_counts[i] for i in layer_indices])
+        total_params = param_counts.sum()
+
+        if target_total_pruned_params <= 0:
+            return {idx: 0.0 for idx in layer_indices}
+
+        if target_total_pruned_params >= total_params:
+            raise ValueError(f"目标剪枝参数量 ({target_total_pruned_params}) 超过总参数量 ({total_params})")
+
+        # 获取层重要性
+        importance_values = np.array([self.layer_importance.get(i, 1.0) for i in layer_indices])
+
+        # 对数变换（可选）
+        if use_log_transform:
+            importance_values = np.log(importance_values + 1)
+
+        # 根据策略计算权重
+        if strategy == 'uniform':
+            # 均匀分配
+            weights = np.ones(self.num_layers)
+
+        elif strategy == 'inverse':
+            # 重要性高 -> 权重低 -> 剪枝少
+            normalized_importance = (importance_values - importance_values.min()) / \
+                                   (importance_values.max() - importance_values.min() + 1e-8)
+            weights = 1.0 / (normalized_importance * alpha + 1.0)
+
+        elif strategy == 'proportional':
+            # 重要性高 -> 权重高 -> 剪枝多
+            normalized_importance = (importance_values - importance_values.min()) / \
+                                   (importance_values.max() - importance_values.min() + 1e-8)
+            weights = normalized_importance ** alpha
+
+        else:
+            raise ValueError(f"Unknown strategy: {strategy}")
+
+        # 归一化权重
+        weights = weights / weights.sum()
+
+        # 根据权重分配剪枝参数量到各层
+        layer_pruned_params = weights * target_total_pruned_params
+
+        # 计算各层剪枝率
+        pruning_rates = layer_pruned_params / (param_counts + 1e-8)
+
+        # 限制在合理范围内
+        pruning_rates = np.clip(pruning_rates, min_rate, max_rate)
+
+        # 重新调整以达到目标总剪枝参数量
+        actual_pruned_params = (pruning_rates * param_counts).sum()
+        if actual_pruned_params > 0:
+            scale_factor = target_total_pruned_params / actual_pruned_params
+            pruning_rates = pruning_rates * scale_factor
+            pruning_rates = np.clip(pruning_rates, min_rate, max_rate)
+
+        return {idx: float(rate) for idx, rate in zip(layer_indices, pruning_rates)}
+
     def verify_average_pruning_rate(self, layer_pruning_rates: Dict[int, float]) -> Dict[str, float]:
         """验证各层平均剪枝率"""
         rates = list(layer_pruning_rates.values())
