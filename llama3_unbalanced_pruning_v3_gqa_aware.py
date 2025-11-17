@@ -301,7 +301,6 @@ def main():
 
         keep_indices, _ = select_gqa_groups_to_prune(group_imp, target_num_kv_heads)
         num_q, num_kv = prune_attention_by_gqa_groups(layer, keep_indices, args.head_dim, args.gqa_ratio)
-        logger.log(f"  Attention: {32}Q:{8}KV → {num_q}Q:{num_kv}KV", end="")
 
         # MLP剪枝
         if args.prune_mlp:
@@ -327,9 +326,11 @@ def main():
             layer.mlp.up_proj.out_features = target_channels
             layer.mlp.down_proj.in_features = target_channels
 
-            logger.log(f", MLP: {num_channels}→{target_channels}")
+            # 输出完整日志（Attention + MLP）
+            logger.log(f"  Attention: {32}Q:{8}KV → {num_q}Q:{num_kv}KV, MLP: {num_channels}→{target_channels}")
         else:
-            logger.log("")  # 换行
+            # 仅输出 Attention
+            logger.log(f"  Attention: {32}Q:{8}KV → {num_q}Q:{num_kv}KV")
 
         # 清理
         del loss
