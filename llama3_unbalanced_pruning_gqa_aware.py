@@ -103,6 +103,9 @@ def main():
     # 微调参数
     parser.add_argument('--finetune', action='store_true',
                        help='剪枝后是否进行微调')
+    parser.add_argument('--finetune_method', type=str, default='full',
+                       choices=['full', 'lora'],
+                       help='微调方法：full(全参数微调,推荐) 或 lora(低显存)')
     parser.add_argument('--finetune_lr', type=float, default=1e-5,
                        help='微调学习率')
     parser.add_argument('--finetune_epochs', type=int, default=1,
@@ -113,6 +116,14 @@ def main():
                        help='微调batch size')
     parser.add_argument('--finetune_seq_len', type=int, default=512,
                        help='微调序列长度')
+    parser.add_argument('--finetune_grad_accum', type=int, default=4,
+                       help='梯度累积步数（有效batch size = batch_size * grad_accum）')
+    parser.add_argument('--finetune_max_grad_norm', type=float, default=1.0,
+                       help='梯度裁剪阈值')
+    parser.add_argument('--finetune_weight_decay', type=float, default=0.01,
+                       help='权重衰减系数')
+    parser.add_argument('--finetune_warmup_steps', type=int, default=0,
+                       help='学习率预热步数')
 
     args = parser.parse_args()
 
@@ -444,7 +455,14 @@ def main():
         logger.log("=" * 60)
 
         # 创建微调器
-        finetuner = FineTuner(model, tokenizer, device=args.device, logger=logger)
+        use_lora = (args.finetune_method == 'lora')
+        finetuner = FineTuner(
+            model,
+            tokenizer,
+            device=args.device,
+            logger=logger,
+            use_lora=use_lora
+        )
 
         # 执行微调
         finetune_stats = finetuner.finetune(
@@ -454,6 +472,10 @@ def main():
             lr=args.finetune_lr,
             epochs=args.finetune_epochs,
             batch_size=args.finetune_batch_size,
+            gradient_accumulation_steps=args.finetune_grad_accum,
+            max_grad_norm=args.finetune_max_grad_norm,
+            warmup_steps=args.finetune_warmup_steps,
+            weight_decay=args.finetune_weight_decay,
             split='train'
         )
 
