@@ -103,6 +103,20 @@ class FineTuner:
         # 准备优化器
         self.model.train()
 
+        # 检查模型健康状态
+        self.log("\n检查模型权重健康状态...")
+        model_healthy, health_info = self._check_model_health()
+        if not model_healthy:
+            self.log("❌ 模型存在数值问题:")
+            self.log(f"  NaN参数数量: {health_info['nan_count']:,}")
+            self.log(f"  Inf参数数量: {health_info['inf_count']:,}")
+            self.log("\n建议:")
+            self.log("  1. 重新运行剪枝流程")
+            self.log("  2. 检查剪枝率是否过高")
+            self.log("  3. 运行诊断脚本: python diagnose_model.py --model_path <path>")
+            raise ValueError("模型包含NaN或Inf值，无法进行微调")
+        self.log("✅ 模型权重正常")
+
         # 只优化需要训练的参数
         if self.use_lora:
             # LoRA模式：只优化LoRA参数
@@ -184,13 +198,31 @@ class FineTuner:
                 outputs = self.model(batch, labels=batch)
                 loss = outputs.loss
 
+                # 检查loss是否有效
+                loss_value = loss.item()
+                if torch.isnan(loss) or torch.isinf(loss) or loss_value > 1e6:
+                    self.log(f"\n❌ 检测到异常Loss: {loss_value}")
+                    self.log(f"  批次索引: {batch_idx}/{num_batches}")
+                    self.log(f"  轮次: {epoch + 1}/{epochs}")
+                    self.log(f"  当前学习率: {lr if scheduler is None else scheduler.get_last_lr()[0]:.2e}")
+                    self.log("\n可能原因:")
+                    self.log("  1. 剪枝后的模型PPL异常高（>50），模型已经损坏")
+                    self.log("  2. 学习率过高")
+                    self.log("  3. 梯度爆炸")
+                    self.log("\n建议解决方案:")
+                    self.log("  1. 检查剪枝后PPL，如果>50需要重新剪枝")
+                    self.log("  2. 降低学习率: --finetune_lr 1e-6 或 5e-7")
+                    self.log("  3. 增强梯度裁剪: --finetune_max_grad_norm 0.5")
+                    self.log("  4. 减少剪枝率: --pruning_ratio 0.15")
+                    raise ValueError(f"训练出现异常Loss={loss_value}，已停止")
+
                 # 梯度累积：除以累积步数
                 loss = loss / gradient_accumulation_steps
 
                 # 反向传播
                 loss.backward()
 
-                total_loss += loss.item() * gradient_accumulation_steps
+                total_loss += loss_value
 
                 # 梯度累积：每N步更新一次参数
                 if (batch_idx + 1) % gradient_accumulation_steps == 0 or (batch_idx + 1) == num_batches:
@@ -296,6 +328,27 @@ class FineTuner:
                 self.log("✅ LoRA权重已合并")
         except:
             self.log("⚠️ 无法合并LoRA权重，可能未使用PEFT")
+
+    def _check_model_health(self) -> tuple[bool, dict]:
+        """
+        检查模型权重的健康状态
+
+        Returns:
+            (is_healthy, info): 布尔值表示是否健康，字典包含详细信息
+        """
+        nan_count = 0
+        inf_count = 0
+
+        for param in self.model.parameters():
+            nan_count += torch.isnan(param).sum().item()
+            inf_count += torch.isinf(param).sum().item()
+
+        is_healthy = (nan_count == 0 and inf_count == 0)
+
+        return is_healthy, {
+            'nan_count': nan_count,
+            'inf_count': inf_count
+        }
 
     def save_finetuned_model(
         self,
