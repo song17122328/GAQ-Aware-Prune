@@ -22,9 +22,9 @@ GQA（Grouped Query Attention）感知的 LLaMA-3 模型剪枝工具
 
 **智能搜索策略**：
 1. **阶段1：智能粗粒度搜索**（步长=1）
-   - 从中心点 5:5 开始，向两边双向搜索
-   - 向左搜索：4:6, 3:7, 2:8, 1:9, 0:10
-   - 向右搜索：6:4, 7:3, 8:2, 9:1, 10:0
+   - 从智能起点 2:8 开始（基于LLaMA-3实际参数比例），向两边双向搜索
+   - 向左搜索：1:9, 0:10
+   - 向右搜索：3:7, 4:6, 5:5, 6:4, 7:3, 8:2, 9:1, 10:0
    - **智能早停**：检测到PPL持续增大且增速加快时自动停止
    - 节省无价值的搜索空间，最多节省50%测试次数
 
@@ -32,6 +32,11 @@ GQA（Grouped Query Attention）感知的 LLaMA-3 模型剪枝工具
    - 从粗粒度最优点开始，向两边双向搜索
    - 同样使用智能早停机制
    - 自动找到全局最优比例
+
+3. **阶段3：冻结层数搜索**（可选，需 `--search_freeze_layers`）
+   - 在最优分布下，搜索最优冻结层数
+   - 贪心搜索，使用早停机制
+   - 避免exhaustive grid search
 
 **早停条件**：连续2-3次PPL都在增大，且增速加快（二阶导数为正）
 
@@ -536,25 +541,34 @@ python test_finetuning.py \
 
 ## 核心参数说明
 
+### 基础参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--base_model` | str | **必需** | 基础模型路径（如 `/newdata/LLMs/Llama-3-8B-Instruct`） |
+| `--save_ckpt_log_name` | str | 时间戳 | 实验日志名称（保存在 `prune_log/{name}/`） |
+| `--save_model` | flag | False | 是否保存剪枝后的模型 |
+
 ### 剪枝参数
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `--pruning_ratio` | float | 0.25 | 总体剪枝率（相对Attention+MLP参数量） |
-| `--pruning_distribution` | str | "5:5" | Attention:MLP 剪枝参数量比例（支持浮点数，如 "1.5:8.5"） |
-| `--pruning_strategy` | str | "inverse" | 剪枝策略：inverse/proportional/uniform |
-| `--layer_importance_weight` | float | 1.0 | 层间剪枝率差异系数（越大差异越明显） |
+| `--pruning_distribution` | str | "5:5" | Attention:MLP 剪枝参数量比例（支持浮点数，如 "1.5:8.5"，x+y=10） |
+| `--pruning_strategy` | str | "inverse" | 剪枝策略：inverse（重要层少剪）/proportional/uniform |
+| `--layer_importance_weight` | float | 1.0 | 层间剪枝率差异系数（越大差异越明显，建议0.5-3.0） |
 | `--min_pruning_rate` | float | 0.0 | 单层最小剪枝率（0表示允许不剪枝） |
 | `--max_pruning_rate` | float | 1.0 | 单层最大剪枝率（1.0表示允许完全剪枝） |
-| `--freeze_top_n_layers` | int | 0 | 冻结重要度最高的n层（不参与剪枝，0表示不冻结） |
+| `--freeze_top_n_layers` | int | 0 | 冻结重要度最高的n层（不参与剪枝，建议3-5层） |
 
 ### 层重要性评估
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `--layer_importance_method` | str | "removal" | 评估方法：removal/activation |
-| `--layer_importance_samples` | int | 50 | 用于评估层重要性的样本数 |
-| `--skip_importance_analysis` | flag | False | 跳过分析，从文件加载 |
+| `--layer_importance_method` | str | "removal" | 评估方法：removal（移除测试）/activation（激活统计） |
+| `--layer_importance_samples` | int | 50 | 用于评估层重要性的样本数（减少可加速） |
+| `--skip_importance_analysis` | flag | False | 跳过分析，从配置文件加载 |
+| `--layer_importance_config` | str | 自动 | 层重要性配置文件路径（用于复用） |
 
 ### 通道/头重要性评估
 
@@ -568,20 +582,73 @@ python test_finetuning.py \
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `--finetune` | flag | False | 是否进行微调 |
-| `--finetune_method` | str | "full" | 微调方法：full/lora |
-| `--finetune_lr` | float | 1e-5 | 学习率（LoRA: 2e-4, 全参数: 1e-5） |
+| `--finetune_method` | str | "full" | 微调方法：full（全参数）/lora（LoRA） |
+| `--finetune_lr` | float | 1e-5 | 学习率（LoRA建议2e-4，全参数建议1e-5） |
 | `--finetune_epochs` | int | 1 | 微调轮数 |
 | `--finetune_samples` | int | 500 | 微调样本数 |
-| `--lora_r` | int | 8 | LoRA秩（建议4-16） |
+| `--finetune_seq_len` | int | 512 | 微调序列长度 |
+| `--finetune_batch_size` | int | 1 | 微调批次大小（受VRAM限制） |
+| `--lora_r` | int | 8 | LoRA秩（建议4-16，越大参数越多） |
 | `--lora_alpha` | int | 16 | LoRA缩放系数（通常为r的2倍） |
+| `--lora_dropout` | float | 0.05 | LoRA dropout率 |
+| `--lora_target_attention` | flag | False | 对Attention层应用LoRA（q/k/v/o投影） |
+| `--lora_target_mlp` | flag | False | 对MLP层应用LoRA（gate/up/down投影） |
 
 ### 评估参数
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `--test_original_ppl` | flag | False | 剪枝前评估原模型PPL |
+| `--test_original_ppl` | flag | False | 剪枝前评估原模型PPL（作为baseline） |
 | `--test_after_prune` | flag | False | 剪枝后评估PPL |
-| `--eval_seq_len` | int | 128 | PPL评估序列长度 |
+| `--eval_seq_len` | int | 128 | PPL评估序列长度（建议与微调一致） |
+
+### Debug参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--layer_start` | int | 0 | 起始层索引（用于部分层测试） |
+| `--layer_end` | int | 32 | 结束层索引（用于部分层测试） |
+| `--device` | str | "cuda" | 设备：cuda/cpu |
+
+---
+
+### 搜索脚本参数 (`search_optimal_distribution.py`)
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--base_model` | str | **必需** | 基础模型路径 |
+| `--pruning_ratio` | float | 0.25 | 总体剪枝率 |
+| `--save_ckpt_log_name` | str | 时间戳 | 搜索实验名称 |
+| `--search_freeze_layers` | flag | False | 是否搜索最优冻结层数（三阶段搜索） |
+| `--freeze_range` | str | "0,1,2,3,4,5,6,8" | 冻结层数搜索范围（逗号分隔） |
+| `--coarse_start_ratio` | str | "2:8" | 粗粒度搜索起点（基于LLaMA-3参数比例） |
+| `--python_path` | str | "python" | Python解释器路径（conda环境需指定完整路径） |
+| `--freeze_top_n_layers` | int | None | 固定冻结层数（非搜索模式） |
+| `--layer_importance_method` | str | None | 层重要度计算方法（传递给剪枝脚本） |
+| `--pruning_strategy` | str | None | 剪枝策略（传递给剪枝脚本） |
+
+**搜索脚本使用示例**：
+
+```bash
+# 基本搜索（两阶段：分布优化）
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --python_path /home/user/miniconda3/bin/python
+
+# 三阶段搜索（分布+冻结层优化）
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --python_path /home/user/miniconda3/bin/python \
+    --search_freeze_layers \
+    --freeze_range 0,1,2,3,4,5,6,8
+
+# 自定义起点和剪枝率
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --python_path /home/user/miniconda3/bin/python \
+    --pruning_ratio 0.30 \
+    --coarse_start_ratio 3:7
+```
 
 ---
 
