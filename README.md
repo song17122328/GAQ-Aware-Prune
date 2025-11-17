@@ -14,7 +14,109 @@ GQA（Grouped Query Attention）感知的 LLaMA-3 模型剪枝工具
 
 ## 快速开始
 
-### 1. 对比不同剪枝分布（推荐：找到最佳比例）
+### 0. 自动搜索最优剪枝比例（推荐）⭐
+
+**使用自动搜索脚本找到最佳 Attention:MLP 比例**
+
+我们提供了自动化搜索脚本 `search_optimal_distribution.py`，采用两阶段搜索策略自动找到使 PPL 最小的剪枝分布：
+
+**搜索策略**：
+1. **阶段1：粗粒度搜索**（步长=1）
+   - 测试 0:10, 1:9, 2:8, ..., 10:0 共11个比例
+   - 找到 PPL 最小的比例及其相邻比例
+
+2. **阶段2：细粒度搜索**（步长=0.1）
+   - 在最优的两个相邻比例之间细化搜索
+   - 最多测试10个点，找到全局最优比例
+
+**基本用法**：
+
+```bash
+# 最简单的用法（使用默认参数）
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct
+
+# 指定剪枝率
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_ratio 0.30
+
+# 启用层冻结（保护最重要的3层）
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_ratio 0.25 \
+    --freeze_top_n_layers 3
+
+# 完整示例
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_ratio 0.25 \
+    --save_ckpt_log_name my_ppl_search \
+    --freeze_top_n_layers 3 \
+    --layer_importance_method removal \
+    --pruning_strategy inverse
+```
+
+**输出示例**：
+
+```
+============================================================
+阶段1: 粗粒度搜索 (步长=1)
+============================================================
+[测试 0:10, 1:9, 2:8, ..., 10:0]
+
+粗粒度搜索结果（按PPL升序）:
+  1. 0:10 -> PPL = 46.87
+  2. 1:9 -> PPL = 73.59
+  3. 2:8 -> PPL = 83.77
+  4. 3:7 -> PPL = 137.70
+  ...
+
+✅ 粗粒度搜索最佳: 0:10 (PPL = 46.87)
+
+============================================================
+阶段2: 细粒度搜索 (步长=0.1)
+搜索区间: 0:10 到 1:9
+============================================================
+[测试 0.1:9.9, 0.2:9.8, ..., 0.9:9.1]
+
+============================================================
+细粒度搜索完成
+============================================================
+✅ 全局最优: 0.3:9.7 (PPL = 45.12)
+
+所有测试结果（按PPL升序）:
+  🏆  1. 0.3:9.7 -> PPL =   45.12
+      2. 0.2:9.8 -> PPL =   45.89
+      3. 0:10    -> PPL =   46.87
+      4. 0.4:9.6 -> PPL =   47.23
+      ...
+
+🎉 搜索成功！
+最优 Attention:MLP 比例: 0.3:9.7
+对应的 PPL: 45.12
+
+可使用以下命令进行最优比例剪枝:
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_distribution 0.3:9.7 \
+    --pruning_ratio 0.25 \
+    --save_model --test_after_prune
+```
+
+**搜索结果保存**：
+- 所有结果保存在 `prune_log/<experiment_name>/search_results.json`
+- 详细日志保存在 `prune_log/<experiment_name>/search.log`
+- 每个比例的剪枝日志在对应的子目录中
+
+**注意事项**：
+- 完整搜索可能需要数小时甚至更长（取决于模型大小和硬件）
+- 建议先在小规模数据上测试，确认流程无误后再运行完整搜索
+- 可以随时中断搜索，已完成的结果会保存在 JSON 文件中
+
+---
+
+### 1. 手动对比不同剪枝分布
 
 **第一步：测试不同的 Attention:MLP 剪枝比例**
 
@@ -380,12 +482,13 @@ python test_finetuning.py \
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `--pruning_ratio` | float | 0.25 | 总体剪枝率（0.25 = 剪掉25%参数） |
-| `--pruning_distribution` | str | "5:5" | Attention:MLP 剪枝参数量比例 |
+| `--pruning_ratio` | float | 0.25 | 总体剪枝率（相对Attention+MLP参数量） |
+| `--pruning_distribution` | str | "5:5" | Attention:MLP 剪枝参数量比例（支持浮点数，如 "1.5:8.5"） |
 | `--pruning_strategy` | str | "inverse" | 剪枝策略：inverse/proportional/uniform |
 | `--layer_importance_weight` | float | 1.0 | 层间剪枝率差异系数（越大差异越明显） |
-| `--min_pruning_rate` | float | 0.15 | 单层最小剪枝率 |
-| `--max_pruning_rate` | float | 0.5 | 单层最大剪枝率 |
+| `--min_pruning_rate` | float | 0.0 | 单层最小剪枝率（0表示允许不剪枝） |
+| `--max_pruning_rate` | float | 1.0 | 单层最大剪枝率（1.0表示允许完全剪枝） |
+| `--freeze_top_n_layers` | int | 0 | 冻结重要度最高的n层（不参与剪枝，0表示不冻结） |
 
 ### 层重要性评估
 
@@ -476,19 +579,24 @@ MLP 总参数量: 805,306,368 (60.0%)
 
 ## 典型场景与参数推荐
 
-| 场景 | pruning_ratio | pruning_distribution | 说明 |
-|------|---------------|----------------------|------|
-| **推荐：根据模型实际分布** | 0.25 | **2:8** | LLaMA-3-8B 实际参数量分布（Attention 19.2%, MLP 80.8%） |
-| 探索最佳分布 | 0.25 | 5:5, 7:3, 3:7, 2:8 | 对比不同分布找最优 |
-| MLP 占主导 | 0.25 | 2:8 或 3:7 | 更多保留 Attention |
-| 均衡剪枝 | 0.25 | 5:5 | Attention 和 MLP 剪掉相同参数量 |
-| Attention 占主导 | 0.25 | 7:3 或 8:2 | 更多保留 MLP |
-| 极端测试：只剪 MLP | 0.25 | 0:10 | 保留所有 Attention |
-| 极端测试：只剪 Attention | 0.25 | 10:0 | 保留所有 MLP |
-| 激进剪枝 | 0.40 | 2:8 | 高剪枝率 |
-| 保守剪枝 | 0.15 | 2:8 | 低剪枝率 |
+| 场景 | pruning_ratio | pruning_distribution | 其他参数 | 说明 |
+|------|---------------|----------------------|----------|------|
+| **⭐自动搜索最优** | 0.25 | 自动 | 使用 `search_optimal_distribution.py` | 自动找到PPL最小的比例 |
+| **推荐：根据模型实际分布** | 0.25 | **2:8** | - | LLaMA-3-8B 实际参数量分布 |
+| 保护关键层 | 0.25 | 2:8 | `--freeze_top_n_layers 3` | 冻结最重要的3层 |
+| 细粒度优化 | 0.25 | 0.3:9.7, 1.5:8.5 | - | 使用浮点数精细调整 |
+| MLP 占主导 | 0.25 | 2:8 或 3:7 | - | 更多保留 Attention |
+| 均衡剪枝 | 0.25 | 5:5 | - | Attention 和 MLP 等量剪枝 |
+| Attention 占主导 | 0.25 | 7:3 或 8:2 | - | 更多保留 MLP |
+| 极端测试：只剪 MLP | 0.25 | 0:10 | - | 保留所有 Attention |
+| 极端测试：只剪 Attention | 0.25 | 10:0 | - | 保留所有 MLP |
+| 激进剪枝 | 0.40 | 2:8 | - | 高剪枝率 |
+| 保守剪枝 | 0.15 | 2:8 | - | 低剪枝率 |
 
-**注意**：所有分布 x:y 满足 x+y=10
+**注意**：
+- 所有分布 x:y 满足 x+y=10（或接近10）
+- 支持浮点数比例，如 1.5:8.5、0.3:9.7 等
+- 层冻结建议冻结3-5层，通常是首层和尾层
 
 ---
 
@@ -496,7 +604,17 @@ MLP 总参数量: 805,306,368 (60.0%)
 
 ### Q1: 如何选择 pruning_distribution？
 
-**建议**：先运行多个实验对比不同分布的 PPL：
+**推荐方法1：使用自动搜索脚本（最简单）**
+
+```bash
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_ratio 0.25
+```
+
+脚本会自动测试多个比例并找到PPL最小的配置。
+
+**推荐方法2：手动对比测试**
 
 ```bash
 # 推荐测试 6 种分布（x+y=10）
@@ -518,7 +636,7 @@ for dist in "10:0" "7:3" "5:5" "3:7" "2:8" "0:10"; do
 done
 ```
 
-**特别推荐**：2:8 分布与 LLaMA-3-8B 的实际参数量分布接近（Attention 19.2%, MLP 80.8%）
+**快速推荐**：2:8 分布与 LLaMA-3-8B 的实际参数量分布接近（Attention 19.2%, MLP 80.8%）
 
 ### Q2: pruning_distribution 和实际剪枝率的关系？
 
@@ -547,6 +665,49 @@ done
 - 剪枝分布比例
 - 总参数量和剪枝参数量
 
+### Q5: 什么是层冻结？如何使用？
+
+**层冻结机制**：保护重要度最高的N层不参与剪枝，由其他层承担全部剪枝任务。
+
+**使用场景**：
+- 通常首层（特征提取）和尾层（输出解码）最重要
+- 保护这些关键层可以提高模型性能，降低PPL
+
+**使用方法**：
+
+```bash
+# 冻结最重要的3层
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_distribution 2:8 \
+    --freeze_top_n_layers 3 \
+    --test_after_prune
+
+# 搜索时使用层冻结
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --freeze_top_n_layers 5
+```
+
+**建议冻结层数**：3-5层（对于32层的LLaMA-3-8B）
+
+### Q6: 自动搜索需要多长时间？
+
+**时间估算**：
+- 粗粒度搜索（11次实验）：约 2-4 小时（每次10-20分钟）
+- 细粒度搜索（最多10次）：约 1-2 小时
+- **总计**：3-6 小时（取决于硬件和模型大小）
+
+**优化建议**：
+- 减少样本数加速测试（`--layer_importance_samples 20`）
+- 先在小范围测试验证流程
+- 使用多GPU并行（手动分配不同比例到不同GPU）
+
+**中断恢复**：
+- 结果实时保存在 `search_results.json`
+- 可随时中断，已完成的结果不会丢失
+- 可手动继续未完成的比例测试
+
 ---
 
 ## 项目结构
@@ -554,16 +715,17 @@ done
 ```
 GAQ-Aware-Prune/
 ├── llama3_unbalanced_pruning_gqa_aware.py  # 主剪枝脚本
+├── search_optimal_distribution.py          # ⭐ 自动搜索最优比例
 ├── test_finetuning.py                      # 独立微调脚本
 ├── evaluate_models.py                      # 模型评估对比脚本
 ├── README.md                               # 本文档
 ├── CLAUDE.md                               # AI助手开发指南
 ├── PARAMETERS_GUIDE.md                     # 参数选择详细指南
 └── LLMPruner/                              # 剪枝库
-    ├── methods/                            # 剪枝方法
-    ├── importance/                         # 重要性分析
-    ├── evaluator/                          # 模型评估
-    ├── trainer/                            # 微调模块
+    ├── methods/                            # 剪枝方法（GQA-aware）
+    ├── importance/                         # 重要性分析（层级+头级）
+    ├── evaluator/                          # 模型评估（PPL等）
+    ├── trainer/                            # 微调模块（LoRA/全参数）
     └── datasets/                           # 数据加载
 ```
 
