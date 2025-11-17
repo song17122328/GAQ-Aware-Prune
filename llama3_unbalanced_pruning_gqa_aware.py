@@ -301,9 +301,9 @@ def main():
     # 计算归一化的比值（x+y=10），与 --pruning_distribution 格式一致
     ratio = total_original_attention / total_original_mlp
     ratio_sum = ratio + 1
-    attn_normalized = round(ratio / ratio_sum * 10)
-    mlp_normalized = round(1 / ratio_sum * 10)
-    logger.log(f"  Attention:MLP 比值 = {attn_normalized}:{mlp_normalized} (归一化，总和为10)")
+    attn_normalized = ratio / ratio_sum * 10
+    mlp_normalized = 1 / ratio_sum * 10
+    logger.log(f"  Attention:MLP 比值 = {attn_normalized:.1f}:{mlp_normalized:.1f} (归一化，总和为10)")
 
     logger.log(f"\n占全局模型的比例:")
     logger.log(f"  Attention: {total_original_attention/before_pruning_parameters:.2%} of total")
