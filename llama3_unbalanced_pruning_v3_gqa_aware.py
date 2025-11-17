@@ -371,9 +371,51 @@ def main():
             _ = model(example_prompts[:1])
         logger.log(f"\n✅ Layer {layer_idx} 剪枝完成并验证通过")
 
-    # ==================== 步骤5: 最终统计 ====================
+    # ==================== 步骤5: 保存模型 ====================
     logger.log("\n" + "=" * 80)
-    logger.log("步骤5: 最终统计")
+    logger.log("步骤5: 保存剪枝后的模型")
+    logger.log("=" * 80)
+
+    if args.save_model:
+        model.half()
+        save_dict = {
+            'model': model,
+            'tokenizer': tokenizer,
+            'layer_pruning_rates': layer_pruning_rates,
+            'layer_importance': layer_importance,
+            'pruning_method': 'gqa_aware_taylor',
+            'config': args.__dict__
+        }
+
+        torch.save(save_dict, logger.best_checkpoint_path)
+        logger.log(f"✅ 模型已保存到: {logger.best_checkpoint_path}")
+    else:
+        logger.log("⚠️ 未启用 --save_model，跳过模型保存")
+
+    # ==================== 步骤6: 重新加载模型 ====================
+    logger.log("\n" + "=" * 80)
+    logger.log("步骤6: 重新加载模型以验证保存/加载流程")
+    logger.log("=" * 80)
+
+    if args.save_model:
+        # 删除原模型，释放内存
+        logger.log("删除原模型副本，释放显存...")
+        del model
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        # 重新加载保存的模型
+        logger.log(f"从检查点重新加载模型: {logger.best_checkpoint_path}")
+        checkpoint = torch.load(logger.best_checkpoint_path)
+        model = checkpoint['model']
+        tokenizer = checkpoint['tokenizer']
+        logger.log("✅ 模型重新加载成功")
+    else:
+        logger.log("⚠️ 未保存模型，使用内存中的模型继续")
+
+    # ==================== 步骤7: 最终统计 ====================
+    logger.log("\n" + "=" * 80)
+    logger.log("步骤7: 统计参数量和配置")
     logger.log("=" * 80)
 
     # 统计剪枝后参数量（所有参数，不管 requires_grad 状态）
@@ -399,29 +441,10 @@ def main():
         ratio = q_heads // kv_heads
         logger.log(f"  Layer {idx}: Q={q_heads}, KV={kv_heads}, ratio={ratio}:1")
 
-    # ==================== 步骤6: 保存模型 ====================
-    if args.save_model:
-        logger.log("=" * 80)
-        logger.log("步骤6: 保存模型")
-        logger.log("=" * 80)
-
-        model.half()
-        save_dict = {
-            'model': model,
-            'tokenizer': tokenizer,
-            'layer_pruning_rates': layer_pruning_rates,
-            'layer_importance': layer_importance,
-            'pruning_method': 'gqa_aware_taylor',
-            'config': args.__dict__
-        }
-
-        torch.save(save_dict, logger.best_checkpoint_path)
-        logger.log(f"✅ 模型已保存到: {logger.best_checkpoint_path}")
-
-    # ==================== 步骤7: 评估PPL ====================
+    # ==================== 步骤8: 评估PPL ====================
     if args.test_after_prune:
-        logger.log("=" * 80)
-        logger.log("步骤7: 评估困惑度")
+        logger.log("\n" + "=" * 80)
+        logger.log("步骤8: 评估困惑度（使用重新加载的模型）")
         logger.log("=" * 80)
 
         model.to(args.device)
@@ -434,6 +457,8 @@ def main():
         logger.log("\n对比预期:")
         logger.log(f"  - 旧方法（torch_pruning）: wikitext2 PPL = 718,107 ❌")
         logger.log(f"  - 新方法（GQA-aware）: wikitext2 PPL = {ppl.get('wikitext2 (wikitext-2-raw-v1)', 'N/A')} ✅")
+    else:
+        logger.log("\n⚠️ 未启用 --test_after_prune，跳过PPL评估")
 
     logger.log("\n" + "=" * 80)
     logger.log("🎉 完成！")
