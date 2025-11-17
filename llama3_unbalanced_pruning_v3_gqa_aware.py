@@ -35,6 +35,8 @@ from LLMPruner import (
     PPLMetric,
     get_examples,
     get_examples_from_text,
+    # 训练
+    FineTuner,
     # 工具
     LoggerWithDepth,
 )
@@ -438,64 +440,25 @@ def main():
         logger.log("\n⚠️ 未启用 --test_after_prune，跳过PPL评估")
 
     # ==================== 步骤9: 微调剪枝后的模型 ====================
+    finetune_stats = None
     if args.finetune:
         logger.log("\n" + "=" * 60)
         logger.log("步骤9: 微调剪枝后的模型")
         logger.log("=" * 60)
 
-        # 加载微调数据
-        logger.log(f"从 wikitext2 训练集加载 {args.finetune_samples} 个样本...")
-        finetune_data = get_examples('wikitext', tokenizer,
-                                     num_samples=args.finetune_samples,
-                                     seq_len=args.finetune_seq_len,
-                                     split='train')
-        logger.log(f"✅ 微调数据加载完成，shape: {finetune_data.shape}")
+        # 创建微调器
+        finetuner = FineTuner(model, tokenizer, device=args.device, logger=logger)
 
-        # 准备优化器
-        model.train()
-        optimizer = torch.optim.AdamW(model.parameters(), lr=args.finetune_lr)
-
-        logger.log(f"\n微调配置:")
-        logger.log(f"  学习率: {args.finetune_lr}")
-        logger.log(f"  轮数: {args.finetune_epochs}")
-        logger.log(f"  样本数: {args.finetune_samples}")
-        logger.log(f"  Batch size: {args.finetune_batch_size}")
-        logger.log(f"  序列长度: {args.finetune_seq_len}")
-
-        # 微调循环
-        for epoch in range(args.finetune_epochs):
-            logger.log(f"\n开始第 {epoch + 1}/{args.finetune_epochs} 轮微调...")
-
-            total_loss = 0
-            num_batches = (len(finetune_data) + args.finetune_batch_size - 1) // args.finetune_batch_size
-
-            for batch_idx in range(num_batches):
-                # 获取batch
-                start_idx = batch_idx * args.finetune_batch_size
-                end_idx = min(start_idx + args.finetune_batch_size, len(finetune_data))
-                batch = finetune_data[start_idx:end_idx].to(args.device)
-
-                # 前向传播
-                outputs = model(batch, labels=batch)
-                loss = outputs.loss
-
-                # 反向传播
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
-                total_loss += loss.item()
-
-                # 每10%进度打印一次
-                if (batch_idx + 1) % max(1, num_batches // 10) == 0:
-                    avg_loss = total_loss / (batch_idx + 1)
-                    progress = (batch_idx + 1) / num_batches * 100
-                    logger.log(f"  进度: {progress:.0f}% | 平均Loss: {avg_loss:.4f}")
-
-            avg_epoch_loss = total_loss / num_batches
-            logger.log(f"✅ 第 {epoch + 1} 轮完成，平均Loss: {avg_epoch_loss:.4f}")
-
-        logger.log("\n✅ 微调完成！")
+        # 执行微调
+        finetune_stats = finetuner.finetune(
+            dataset_name='wikitext',
+            num_samples=args.finetune_samples,
+            seq_len=args.finetune_seq_len,
+            lr=args.finetune_lr,
+            epochs=args.finetune_epochs,
+            batch_size=args.finetune_batch_size,
+            split='train'
+        )
 
     else:
         logger.log("\n⚠️ 未启用 --finetune，跳过微调")
@@ -506,27 +469,16 @@ def main():
         logger.log("步骤10: 保存微调后的模型")
         logger.log("=" * 60)
 
-        model.half()
         finetuned_path = logger.best_checkpoint_path.replace('.bin', '_finetuned.bin')
 
-        save_dict = {
-            'model': model,
-            'tokenizer': tokenizer,
-            'layer_pruning_rates': layer_pruning_rates,
-            'layer_importance': layer_importance,
-            'pruning_method': 'gqa_aware_taylor',
-            'finetuned': True,
-            'finetune_config': {
-                'lr': args.finetune_lr,
-                'epochs': args.finetune_epochs,
-                'samples': args.finetune_samples,
-                'batch_size': args.finetune_batch_size,
-            },
-            'config': args.__dict__
-        }
-
-        torch.save(save_dict, finetuned_path)
-        logger.log(f"✅ 微调后模型已保存到: {finetuned_path}")
+        # 使用 FineTuner 的保存方法
+        finetuner.save_finetuned_model(
+            save_path=finetuned_path,
+            layer_pruning_rates=layer_pruning_rates,
+            layer_importance=layer_importance,
+            finetune_stats=finetune_stats,
+            extra_info=args.__dict__
+        )
 
     # ==================== 步骤11: 评估微调后PPL ====================
     if args.finetune and args.test_after_prune:

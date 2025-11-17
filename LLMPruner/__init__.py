@@ -32,6 +32,9 @@ from .datasets import get_examples, get_examples_from_text
 from .utils.logger import LoggerWithDepth
 from .utils.get_best_gpu import get_best_gpu
 
+# 训练模块
+from .trainer import FineTuner
+
 __version__ = '0.1.0'
 
 __all__ = [
@@ -50,6 +53,9 @@ __all__ = [
     # Datasets
     'get_examples',
     'get_examples_from_text',
+
+    # Trainer
+    'FineTuner',
 
     # Utils
     'LoggerWithDepth',
