@@ -24,6 +24,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 sys.path.insert(0, os.path.dirname(__file__))
 
 from LLMPruner.evaluator.ppl import PPLMetric
+from LLMPruner.utils.get_best_gpu import get_best_gpu
 
 
 def load_model(model_path, model_type='huggingface', device='cuda'):
@@ -252,8 +253,11 @@ def main():
         print("使用 --help 查看帮助")
         return
 
-    # 自动选择GPU
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # 自动选择最佳GPU
+    if torch.cuda.is_available():
+        device = f"cuda:{get_best_gpu()}"
+    else:
+        device = 'cpu'
     print(f"使用设备: {device}")
 
     results = {}
@@ -273,7 +277,7 @@ def main():
             if ppl_result:
                 print(f"\n原始模型 PPL: {ppl_result}")
                 results['原始模型'] = {
-                    'ppl': dict(ppl_result),
+                    'ppl': ppl_result.results,
                     'param_count': param_count
                 }
 
@@ -297,7 +301,7 @@ def main():
             if ppl_result:
                 print(f"\n剪枝后模型 PPL: {ppl_result}")
                 results['剪枝后模型'] = {
-                    'ppl': dict(ppl_result),
+                    'ppl': ppl_result.results,
                     'param_count': param_count
                 }
 
@@ -321,7 +325,7 @@ def main():
             if ppl_result:
                 print(f"\n微调后模型 PPL: {ppl_result}")
                 results['微调后模型'] = {
-                    'ppl': dict(ppl_result),
+                    'ppl': ppl_result.results,
                     'param_count': param_count
                 }
 
