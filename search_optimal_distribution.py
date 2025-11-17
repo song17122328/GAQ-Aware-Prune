@@ -158,20 +158,119 @@ class PPLSearcher:
             return None
         return min(self.results.values())
 
+    def _should_early_stop(self, ppl_history: List[float], min_points: int = 2) -> bool:
+        """
+        判断是否应该早停
+
+        条件：连续min_points次PPL都在增大，且增速加快（二阶导数为正）
+
+        Args:
+            ppl_history: PPL历史记录（最新的在最后）
+            min_points: 至少需要多少个点来判断趋势
+
+        Returns:
+            True表示应该早停
+        """
+        if len(ppl_history) < min_points + 1:
+            return False
+
+        # 检查最近的min_points+1个点
+        recent = ppl_history[-(min_points+1):]
+
+        # 检查是否连续增大
+        is_increasing = all(recent[i] > recent[i-1] for i in range(1, len(recent)))
+
+        if not is_increasing:
+            return False
+
+        # 检查增速是否加快（二阶导数为正）
+        if len(recent) >= 3:
+            # 计算一阶导数（增量）
+            deltas = [recent[i] - recent[i-1] for i in range(1, len(recent))]
+            # 检查增量是否递增（增速加快）
+            is_accelerating = all(deltas[i] > deltas[i-1] for i in range(1, len(deltas)))
+            return is_accelerating
+
+        return False
+
     def coarse_search(self) -> Tuple[Optional[str], Optional[str]]:
         """
-        粗粒度搜索: 0:10 到 10:0，步长=1
+        智能粗粒度搜索: 从中间开始，向两边搜索，自动早停
+
+        策略:
+        1. 从 5:5 开始
+        2. 向左搜索 (4:6, 3:7, ..., 0:10)
+        3. 向右搜索 (6:4, 7:3, ..., 10:0)
+        4. 检测到PPL持续增大且加速时提前停止
 
         Returns:
             (best_ratio, second_best_ratio) 最佳和次佳比例
         """
         self.log("\n" + "="*60)
-        self.log("阶段1: 粗粒度搜索 (步长=1)")
+        self.log("阶段1: 智能粗粒度搜索 (步长=1, 带早停)")
         self.log("="*60)
 
-        for attn in range(11):  # 0 到 10
+        # 从中间开始
+        center = 5
+        self.log(f"\n从中心点开始: {center}:{10-center}")
+        center_ppl = self.run_pruning(float(center), float(10 - center))
+
+        if center_ppl is None:
+            self.log("❌ 中心点测试失败")
+            return None, None
+
+        # 向左搜索 (Attention减少，MLP增加)
+        self.log(f"\n向左搜索 (减少Attention比例):")
+        left_ppls = [center_ppl]
+        left_ratios = [(center, 10-center)]
+
+        for attn in range(center - 1, -1, -1):
             mlp = 10 - attn
-            self.run_pruning(float(attn), float(mlp))
+            self.log(f"  测试 {attn}:{mlp}")
+            ppl = self.run_pruning(float(attn), float(mlp))
+
+            if ppl is not None:
+                left_ppls.append(ppl)
+                left_ratios.append((attn, mlp))
+
+                # 早停检测
+                if self._should_early_stop(left_ppls, min_points=2):
+                    self.log(f"  ⚠️  检测到PPL持续增大且加速，停止向左搜索")
+                    self.log(f"     最近3次PPL: {left_ppls[-3:]}")
+                    break
+            else:
+                self.log(f"  ⚠️  测试失败，跳过")
+
+        # 向右搜索 (Attention增加，MLP减少)
+        self.log(f"\n向右搜索 (增加Attention比例):")
+        right_ppls = [center_ppl]
+        right_ratios = [(center, 10-center)]
+
+        for attn in range(center + 1, 11):
+            mlp = 10 - attn
+            self.log(f"  测试 {attn}:{mlp}")
+            ppl = self.run_pruning(float(attn), float(mlp))
+
+            if ppl is not None:
+                right_ppls.append(ppl)
+                right_ratios.append((attn, mlp))
+
+                # 早停检测
+                if self._should_early_stop(right_ppls, min_points=2):
+                    self.log(f"  ⚠️  检测到PPL持续增大且加速，停止向右搜索")
+                    self.log(f"     最近3次PPL: {right_ppls[-3:]}")
+                    break
+            else:
+                self.log(f"  ⚠️  测试失败，跳过")
+
+        # 统计搜索效率
+        total_possible = 11
+        total_tested = len(self.results)
+        saved_tests = total_possible - total_tested
+        self.log(f"\n搜索效率统计:")
+        self.log(f"  可能测试数: {total_possible}")
+        self.log(f"  实际测试数: {total_tested}")
+        self.log(f"  节省测试数: {saved_tests} ({saved_tests/total_possible*100:.1f}%)")
 
         # 找出PPL最小的两个相邻比例
         if len(self.results) < 2:
@@ -220,36 +319,87 @@ class PPLSearcher:
 
         return best_ratio, second_best_ratio
 
-    def fine_search(self, ratio1: str, ratio2: str) -> str:
+    def fine_search(self, center_ratio: str) -> str:
         """
-        细粒度搜索: 在两个比例之间，步长=0.1
+        智能细粒度搜索: 从最优点向两边扩展，带早停
+
+        策略:
+        1. 从粗粒度的最优点开始
+        2. 向左搜索（减少Attention）
+        3. 向右搜索（增加Attention）
+        4. 检测到PPL持续增大且加速时提前停止
 
         Args:
-            ratio1: 第一个比例（格式: "2.0:8.0"）
-            ratio2: 第二个比例（格式: "1.0:9.0"）
+            center_ratio: 中心比例（粗粒度搜索的最优点）
 
         Returns:
             最佳比例
         """
         self.log("\n" + "="*60)
-        self.log(f"阶段2: 细粒度搜索 (步长=0.1)")
-        self.log(f"搜索区间: {ratio1} 到 {ratio2}")
+        self.log(f"阶段2: 智能细粒度搜索 (步长=0.1, 带早停)")
+        self.log(f"从最优点开始: {center_ratio}")
         self.log("="*60)
 
-        # 解析比例
-        attn1 = float(ratio1.split(':')[0])
-        attn2 = float(ratio2.split(':')[0])
+        # 解析中心比例
+        center_attn = float(center_ratio.split(':')[0])
+        center_mlp = float(center_ratio.split(':')[1])
+        center_ppl = self.results[center_ratio]
 
-        # 确保attn1 < attn2
-        if attn1 > attn2:
-            attn1, attn2 = attn2, attn1
+        # 向左搜索（减少Attention，步长0.1）
+        self.log(f"\n向左精细搜索 (减少Attention):")
+        left_ppls = [center_ppl]
+        attn = center_attn - 0.1
 
-        # 在区间内搜索（不包括端点，因为已经测试过了）
-        attn = attn1 + 0.1
-        while attn < attn2 - 0.05:  # 0.05是为了避免浮点数精度问题
+        while attn >= 0:
             mlp = 10.0 - attn
-            self.run_pruning(attn, mlp)
+            ratio_str = f"{attn:.1f}:{mlp:.1f}"
+            self.log(f"  测试 {ratio_str}")
+
+            ppl = self.run_pruning(attn, mlp)
+            if ppl is not None:
+                left_ppls.append(ppl)
+
+                # 早停检测
+                if self._should_early_stop(left_ppls, min_points=2):
+                    self.log(f"  ⚠️  检测到PPL持续增大且加速，停止向左搜索")
+                    self.log(f"     最近3次PPL: {left_ppls[-3:]}")
+                    break
+            else:
+                self.log(f"  ⚠️  测试失败，跳过")
+
+            attn -= 0.1
+            attn = round(attn, 1)  # 避免浮点数精度问题
+
+        # 向右搜索（增加Attention，步长0.1）
+        self.log(f"\n向右精细搜索 (增加Attention):")
+        right_ppls = [center_ppl]
+        attn = center_attn + 0.1
+
+        while attn <= 10.0:
+            mlp = 10.0 - attn
+            ratio_str = f"{attn:.1f}:{mlp:.1f}"
+            self.log(f"  测试 {ratio_str}")
+
+            ppl = self.run_pruning(attn, mlp)
+            if ppl is not None:
+                right_ppls.append(ppl)
+
+                # 早停检测
+                if self._should_early_stop(right_ppls, min_points=2):
+                    self.log(f"  ⚠️  检测到PPL持续增大且加速，停止向右搜索")
+                    self.log(f"     最近3次PPL: {right_ppls[-3:]}")
+                    break
+            else:
+                self.log(f"  ⚠️  测试失败，跳过")
+
             attn += 0.1
+            attn = round(attn, 1)  # 避免浮点数精度问题
+
+        # 统计搜索效率（细粒度理论上最多10个点）
+        theoretical_max = min(int((10.0 - 0) / 0.1) + 1, 101)  # 理论上最多101个点
+        total_tested = len([k for k in self.results.keys() if '.' in k])  # 统计带小数的比例
+        self.log(f"\n细粒度搜索效率统计:")
+        self.log(f"  细粒度测试数: {total_tested}")
 
         # 找出所有结果中的最佳
         if not self.results:
@@ -282,17 +432,14 @@ class PPLSearcher:
         self.log(f"额外参数: {' '.join(self.extra_args)}")
 
         # 阶段1: 粗粒度搜索
-        ratio1, ratio2 = self.coarse_search()
+        best_coarse_ratio, _ = self.coarse_search()
 
-        if ratio1 is None:
+        if best_coarse_ratio is None:
             self.log("❌ 搜索失败")
             return None, None
 
-        # 阶段2: 细粒度搜索（如果有第二个比例）
-        if ratio2 is not None:
-            best_ratio = self.fine_search(ratio1, ratio2)
-        else:
-            best_ratio = ratio1
+        # 阶段2: 细粒度搜索（从粗粒度最优点开始）
+        best_ratio = self.fine_search(best_coarse_ratio)
 
         best_ppl = self.get_best_ppl()
 
