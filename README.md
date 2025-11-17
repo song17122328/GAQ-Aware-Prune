@@ -42,6 +42,15 @@ python llama3_unbalanced_pruning_gqa_aware.py \
     --test_after_prune \
     --save_model
 
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name dist_1_9 \
+    --pruning_ratio 0.25 \
+    --pruning_distribution 1:9 \
+    --test_original_ppl \
+    --test_after_prune \
+    --save_model
+
 # 实验3: MLP 占主导（Attention:MLP = 3:7）
 python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
