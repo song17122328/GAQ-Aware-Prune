@@ -118,8 +118,9 @@ def main():
         logger.log("=" * 60)
 
         model.eval()
+        logger.log(f"使用 seq_len={args.seq_len} 计算PPL（与训练一致）")
         ppl_before = PPLMetric(model, tokenizer, ['wikitext2'],
-                              seq_len=128, device=device)
+                              seq_len=args.seq_len, device=device)
         logger.log(f"微调前 PPL: {ppl_before}")
 
     # ==================== 步骤3: 执行微调 ====================
@@ -181,8 +182,9 @@ def main():
         logger.log("=" * 60)
 
         model.eval()
+        logger.log(f"使用 seq_len={args.seq_len} 计算PPL（与训练一致）")
         ppl_after = PPLMetric(model, tokenizer, ['wikitext2'],
-                             seq_len=128, device=device)
+                             seq_len=args.seq_len, device=device)
         logger.log(f"微调后 PPL: {ppl_after}")
 
         if args.test_before:
