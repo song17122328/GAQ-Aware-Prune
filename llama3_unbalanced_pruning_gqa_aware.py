@@ -53,26 +53,31 @@ def main():
                        help='目标剪枝率（整体平均）')
 
     # 层重要度评估
-    parser.add_argument('--importance_method', type=str, default='removal',
+    parser.add_argument('--layer_importance_method', '--importance_method',
+                       type=str, default='removal', dest='layer_importance_method',
                        choices=['removal', 'activation'],
                        help='层重要度评估方法：removal(移除层) 或 activation(激活值)')
-    parser.add_argument('--importance_samples', type=int, default=50,
+    parser.add_argument('--layer_importance_samples', '--importance_samples',
+                       type=int, default=50, dest='layer_importance_samples',
                        help='用于评估层重要度的样本数量')
     parser.add_argument('--skip_importance_analysis', action='store_true',
                        help='跳过层重要度分析，使用已保存的配置')
-    parser.add_argument('--importance_config', type=str, default='layer_importance_config.json',
+    parser.add_argument('--layer_importance_config', '--importance_config',
+                       type=str, default='layer_importance_config.json',
+                       dest='layer_importance_config',
                        help='层重要度配置文件路径')
 
     # 非均衡剪枝策略
     parser.add_argument('--pruning_strategy', type=str, default='inverse',
                        choices=['inverse', 'proportional', 'uniform'],
                        help='剪枝策略：inverse(重要层剪少), proportional(重要层剪多), uniform(均匀)')
-    parser.add_argument('--alpha', type=float, default=1.0,
-                       help='重要性权重系数，越大差异越明显')
+    parser.add_argument('--layer_importance_weight', '--alpha',
+                       type=float, default=1.0, dest='layer_importance_weight',
+                       help='层间剪枝率差异系数：越大层间差异越明显（推荐0.5-3.0）')
     parser.add_argument('--min_pruning_rate', type=float, default=0.15,
-                       help='最小剪枝率（至少剪1个GQA组）')
+                       help='单层最小剪枝率（至少剪1个GQA组）')
     parser.add_argument('--max_pruning_rate', type=float, default=0.5,
-                       help='最大剪枝率')
+                       help='单层最大剪枝率')
 
     # 剪枝范围
     parser.add_argument('--layer_start', type=int, default=0,
@@ -80,15 +85,19 @@ def main():
     parser.add_argument('--layer_end', type=int, default=32,
                        help='剪枝结束层')
 
+    # 通道/头重要性评估
+    parser.add_argument('--channel_importance_samples', '--num_examples',
+                       type=int, default=10, dest='channel_importance_samples',
+                       help='用于计算通道/头Taylor重要性的样本数（Attention层评估头，MLP层评估通道）')
+    parser.add_argument('--taylor_seq_len', '--max_seq_len',
+                       type=int, default=128, dest='taylor_seq_len',
+                       help='Taylor重要性计算时的序列长度')
+
     # 其他参数
-    parser.add_argument('--num_examples', type=int, default=10,
-                       help='Taylor重要性评估的样本数')
     parser.add_argument('--save_model', action='store_true',
                        help='是否保存模型')
     parser.add_argument('--test_after_prune', action='store_true',
                        help='剪枝后是否评估PPL')
-    parser.add_argument('--max_seq_len', type=int, default=128,
-                       help='PPL评估最大序列长度')
 
     # GQA配置
     parser.add_argument('--head_dim', type=int, default=128,
@@ -194,7 +203,7 @@ def main():
     logger.log("=" * 60)
 
     # 计算所需的最大样本数
-    max_samples = max(args.importance_samples, args.num_examples) if not args.skip_importance_analysis else args.num_examples
+    max_samples = max(args.layer_importance_samples, args.channel_importance_samples) if not args.skip_importance_analysis else args.channel_importance_samples
 
     # 一次性加载所有需要的样本（从 wikitext2）
     logger.log(f"从 wikitext2 加载 {max_samples} 个样本...")
@@ -208,13 +217,13 @@ def main():
         logger.log("=" * 60)
 
         # 将 tokenized 样本转换回文本（用于层重要性评估）
-        eval_samples = all_samples[:args.importance_samples]
+        eval_samples = all_samples[:args.layer_importance_samples]
         eval_texts = [tokenizer.decode(sample, skip_special_tokens=True) for sample in eval_samples]
         logger.log(f"准备了 {len(eval_texts)} 个样本用于层重要性评估")
 
         analyzer = LayerImportanceAnalyzer(model, tokenizer, device=args.device)
 
-        if args.importance_method == 'removal':
+        if args.layer_importance_method == 'removal':
             logger.log("使用层移除法评估重要性...")
             layer_importance = analyzer.measure_layer_importance_by_removal(
                 eval_texts, num_layers=num_layers
@@ -244,7 +253,7 @@ def main():
     else:
         logger.log("跳过层重要度分析，加载已保存的配置...")
         calculator = UnbalancedStructuredPruningCalculator({}, num_layers)
-        layer_pruning_rates = calculator.load_pruning_rates(args.importance_config)
+        layer_pruning_rates = calculator.load_pruning_rates(args.layer_importance_config)
         layer_importance = {i: 1.0 for i in range(num_layers)}
 
     # ==================== 步骤3: 计算各层剪枝率 ====================
@@ -257,7 +266,7 @@ def main():
     layer_pruning_rates = calculator.compute_layer_pruning_rates(
         target_overall_rate=args.pruning_ratio,
         strategy=args.pruning_strategy,
-        alpha=args.alpha,
+        alpha=args.layer_importance_weight,
         min_rate=args.min_pruning_rate,
         max_rate=args.max_pruning_rate,
         use_log_transform=True
@@ -273,7 +282,7 @@ def main():
     # 不再打印所有32层的详细剪枝率，仅保存到JSON配置文件中
 
     # 保存配置
-    config_path = os.path.join(logger.log_dir, args.importance_config)
+    config_path = os.path.join(logger.log_dir, args.layer_importance_config)
     calculator.save_pruning_rates(layer_pruning_rates, config_path)
 
     # 可视化
@@ -287,8 +296,8 @@ def main():
     logger.log("使用GQA组级Taylor Importance，保持4:1 Q:KV比例\n")
 
     # 准备样本数据用于计算梯度（复用已加载的数据，截断到64 token）
-    example_prompts = all_samples[:args.num_examples, :64].to(args.device)
-    logger.log(f"准备了 {args.num_examples} 个样本用于Taylor importance计算")
+    example_prompts = all_samples[:args.channel_importance_samples, :64].to(args.device)
+    logger.log(f"准备了 {args.channel_importance_samples} 个样本用于Taylor importance计算")
 
     # 确定要剪枝的层
     pruning_layers = [i for i in range(args.layer_start, min(args.layer_end, num_layers))
@@ -454,7 +463,7 @@ def main():
         model.eval()
 
         ppl_before_finetune = PPLMetric(model, tokenizer, ['wikitext2'],
-                       seq_len=args.max_seq_len, device=args.device)
+                       seq_len=args.taylor_seq_len, device=args.device)
         logger.log(f"\n剪枝后 PPL: {ppl_before_finetune}")
     else:
         logger.log("\n⚠️ 未启用 --test_after_prune，跳过PPL评估")
@@ -526,7 +535,7 @@ def main():
         model.eval()
 
         ppl_after_finetune = PPLMetric(model, tokenizer, ['wikitext2'],
-                                       seq_len=args.max_seq_len, device=args.device)
+                                       seq_len=args.taylor_seq_len, device=args.device)
         logger.log(f"\n微调后 PPL: {ppl_after_finetune}")
 
         # 对比剪枝前后和微调前后的变化

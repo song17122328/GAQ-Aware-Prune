@@ -195,6 +195,10 @@ class PPLMetric:
         """字典式访问接口"""
         return self.results.get(key, default)
 
+    def __contains__(self, key: str):
+        """支持 'key in ppl' 操作"""
+        return key in self.results
+
     def __getitem__(self, key: str):
         """支持 ppl['wikitext2'] 访问"""
         return self.results[key]
