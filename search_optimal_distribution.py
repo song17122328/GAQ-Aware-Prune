@@ -27,7 +27,8 @@ class PPLSearcher:
                  extra_args: List[str] = None,
                  search_freeze_layers: bool = False,
                  freeze_range: List[int] = None,
-                 coarse_start_ratio: Tuple[int, int] = (2, 8)):
+                 coarse_start_ratio: Tuple[int, int] = (2, 8),
+                 python_path: str = None):
         """
         初始化搜索器
 
@@ -39,6 +40,7 @@ class PPLSearcher:
             search_freeze_layers: 是否搜索最优冻结层数
             freeze_range: 冻结层数搜索范围（默认[0,1,2,3,4,5,6,8]）
             coarse_start_ratio: 粗粒度搜索起点（默认2:8，基于LLaMA-3实际参数比例）
+            python_path: Python解释器路径（默认使用'python'）
         """
         self.base_model = base_model
         self.pruning_ratio = pruning_ratio
@@ -47,6 +49,7 @@ class PPLSearcher:
         self.search_freeze_layers = search_freeze_layers
         self.freeze_range = freeze_range or [0, 1, 2, 3, 4, 5, 6, 8]
         self.coarse_start_ratio = coarse_start_ratio
+        self.python_path = python_path or "python"
 
         # 存储结果
         self.results: Dict[str, float] = {}  # {ratio_str: ppl_value} 或 {ratio_str_freeze_N: ppl_value}
@@ -93,7 +96,7 @@ class PPLSearcher:
 
         # 构建命令
         cmd = [
-            "python", "llama3_unbalanced_pruning_gqa_aware.py",
+            self.python_path, "llama3_unbalanced_pruning_gqa_aware.py",
             "--base_model", self.base_model,
             "--pruning_ratio", str(self.pruning_ratio),
             "--pruning_distribution", ratio_str,
@@ -626,6 +629,11 @@ def main():
        --base_model /path/to/model \\
        --freeze_top_n_layers 3
 
+7. 指定Python解释器（conda环境）:
+   python search_optimal_distribution.py \\
+       --base_model /path/to/model \\
+       --python_path /path/to/conda/envs/your_env/bin/python
+
 搜索策略说明:
 - 阶段1: 粗粒度分布搜索（步长=1，智能双向+早停）
 - 阶段2: 细粒度分布搜索（步长=0.1，智能双向+早停）
@@ -653,6 +661,8 @@ def main():
                        help='冻结层数搜索范围（逗号分隔，默认: 0,1,2,3,4,5,6,8）')
     parser.add_argument('--coarse_start_ratio', type=str, default='2:8',
                        help='粗粒度搜索起点（默认: 2:8，基于LLaMA-3实际Attention:MLP参数比例）')
+    parser.add_argument('--python_path', type=str, default=None,
+                       help='Python解释器路径（默认: python）。如果使用conda环境，请指定完整路径')
 
     # 传递给剪枝脚本的额外参数
     parser.add_argument('--freeze_top_n_layers', type=int, default=None,
@@ -698,7 +708,8 @@ def main():
         extra_args=extra_args,
         search_freeze_layers=args.search_freeze_layers,
         freeze_range=freeze_range,
-        coarse_start_ratio=coarse_start_ratio
+        coarse_start_ratio=coarse_start_ratio,
+        python_path=args.python_path
     )
 
     # 执行搜索
