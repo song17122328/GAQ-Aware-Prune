@@ -167,7 +167,8 @@ def main():
     num_layers = len(model.model.layers)
     logger.log(f"模型总层数: {num_layers}")
 
-    before_pruning_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # 统计剪枝前参数量（所有参数）
+    before_pruning_parameters = sum(p.numel() for p in model.parameters())
     logger.log(f"剪枝前参数量: {before_pruning_parameters:,}")
 
     # ==================== 步骤2: 评估层重要性 ====================
@@ -375,12 +376,21 @@ def main():
     logger.log("步骤5: 最终统计")
     logger.log("=" * 80)
 
-    final_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # 统计剪枝后参数量（所有参数，不管 requires_grad 状态）
+    final_parameters = sum(p.numel() for p in model.parameters())
     logger.log(f"\n参数统计:")
     logger.log(f"  剪枝前: {before_pruning_parameters:,}")
     logger.log(f"  剪枝后: {final_parameters:,}")
     logger.log(f"  减少量: {before_pruning_parameters - final_parameters:,}")
     logger.log(f"  实际剪枝率: {(1 - final_parameters/before_pruning_parameters)*100:.2f}%")
+
+    # 计算物理大小（假设 float16，每个参数 2 bytes）
+    before_size_gb = before_pruning_parameters * 2 / (1024**3)
+    final_size_gb = final_parameters * 2 / (1024**3)
+    logger.log(f"\n模型大小（FP16）:")
+    logger.log(f"  剪枝前: {before_size_gb:.2f} GB")
+    logger.log(f"  剪枝后: {final_size_gb:.2f} GB")
+    logger.log(f"  减少: {before_size_gb - final_size_gb:.2f} GB")
 
     logger.log("\n各层Attention配置:")
     for idx, layer in enumerate(model.model.layers):
