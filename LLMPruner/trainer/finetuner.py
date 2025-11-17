@@ -285,7 +285,8 @@ class FineTuner:
             'final_loss': epoch_losses[-1] if epoch_losses else None
         }
 
-    def _setup_lora(self, lora_r: int = 8, lora_alpha: int = 16, lora_dropout: float = 0.05):
+    def _setup_lora(self, lora_r: int = 8, lora_alpha: int = 16, lora_dropout: float = 0.05,
+                    target_attention: bool = True, target_mlp: bool = True):
         """
         配置LoRA（如果PEFT可用）
 
@@ -293,11 +294,33 @@ class FineTuner:
             lora_r: LoRA秩
             lora_alpha: LoRA缩放系数
             lora_dropout: LoRA dropout率
+            target_attention: 是否对Attention层应用LoRA
+            target_mlp: 是否对MLP层应用LoRA
         """
         try:
             from peft import LoraConfig, get_peft_model, TaskType
 
-            self.log(f"配置LoRA (r={lora_r}, alpha={lora_alpha}, dropout={lora_dropout})...")
+            # 构建target_modules列表
+            target_modules = []
+
+            if target_attention:
+                # Attention层：q_proj, k_proj, v_proj, o_proj
+                target_modules.extend(["q_proj", "k_proj", "v_proj", "o_proj"])
+
+            if target_mlp:
+                # MLP层：gate_proj, up_proj, down_proj
+                target_modules.extend(["gate_proj", "up_proj", "down_proj"])
+
+            if not target_modules:
+                self.log("⚠️ 未指定任何target_modules，回退到全参数微调")
+                self.use_lora = False
+                return
+
+            self.log(f"配置LoRA:")
+            self.log(f"  秩(r): {lora_r}")
+            self.log(f"  缩放(alpha): {lora_alpha}")
+            self.log(f"  Dropout: {lora_dropout}")
+            self.log(f"  目标模块: {', '.join(target_modules)}")
 
             # 配置LoRA
             self.lora_config = LoraConfig(
@@ -305,7 +328,7 @@ class FineTuner:
                 r=lora_r,
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
-                target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],  # Attention层
+                target_modules=target_modules,
                 bias="none",
             )
 

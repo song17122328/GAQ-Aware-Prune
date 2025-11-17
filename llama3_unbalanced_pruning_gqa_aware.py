@@ -105,9 +105,9 @@ def main():
                        help='剪枝后是否进行微调')
     parser.add_argument('--finetune_method', type=str, default='full',
                        choices=['full', 'lora'],
-                       help='微调方法：full(全参数微调,推荐) 或 lora(低显存)')
+                       help='微调方法：full(全参数微调) 或 lora(LoRA微调)')
     parser.add_argument('--finetune_lr', type=float, default=1e-5,
-                       help='微调学习率')
+                       help='微调学习率（LoRA建议2e-4，全参数建议1e-5）')
     parser.add_argument('--finetune_epochs', type=int, default=1,
                        help='微调轮数')
     parser.add_argument('--finetune_samples', type=int, default=500,
@@ -124,6 +124,18 @@ def main():
                        help='权重衰减系数')
     parser.add_argument('--finetune_warmup_steps', type=int, default=0,
                        help='学习率预热步数')
+
+    # LoRA专用参数
+    parser.add_argument('--lora_r', type=int, default=8,
+                       help='LoRA秩（越大效果越好但参数越多，建议4-16）')
+    parser.add_argument('--lora_alpha', type=int, default=16,
+                       help='LoRA缩放系数（通常设为r的2倍）')
+    parser.add_argument('--lora_dropout', type=float, default=0.05,
+                       help='LoRA dropout率')
+    parser.add_argument('--lora_target_attention', action='store_true', default=True,
+                       help='LoRA是否应用到Attention层（q,k,v,o）')
+    parser.add_argument('--lora_target_mlp', action='store_true', default=True,
+                       help='LoRA是否应用到MLP层（gate,up,down）')
 
     args = parser.parse_args()
 
@@ -461,7 +473,12 @@ def main():
             tokenizer,
             device=args.device,
             logger=logger,
-            use_lora=use_lora
+            use_lora=use_lora,
+            lora_r=args.lora_r if use_lora else 8,
+            lora_alpha=args.lora_alpha if use_lora else 16,
+            lora_dropout=args.lora_dropout if use_lora else 0.05,
+            lora_target_attention=args.lora_target_attention if use_lora else True,
+            lora_target_mlp=args.lora_target_mlp if use_lora else True
         )
 
         # 执行微调
