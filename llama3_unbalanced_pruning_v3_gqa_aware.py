@@ -23,40 +23,21 @@ import argparse
 import numpy as np
 from transformers import AutoTokenizer, LlamaForCausalLM
 
-from LLMPruner.utils.logger import LoggerWithDepth
-from layer_importance import (
-    LayerImportanceAnalyzer,
-    UnbalancedStructuredPruningCalculator,
-)
-
-from LLMPruner.evaluator.ppl import PPLMetric
-from LLMPruner.datasets.example_samples import get_examples
-
-
-
-from gqa_aware_pruning import (
+from LLMPruner import (
+    # 剪枝方法
     compute_gqa_group_importance,
     select_gqa_groups_to_prune,
-    prune_attention_by_gqa_groups
+    prune_attention_by_gqa_groups,
+    # 重要性分析
+    LayerImportanceAnalyzer,
+    UnbalancedStructuredPruningCalculator,
+    # 评估和数据
+    PPLMetric,
+    get_examples,
+    get_examples_from_text,
+    # 工具
+    LoggerWithDepth,
 )
-
-
-def load_evaluation_data(tokenizer, num_samples=100):
-    """加载评估数据"""
-    from datasets import load_dataset
-
-    print("加载评估数据...")
-    dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
-
-    texts = []
-    for i, item in enumerate(dataset):
-        if i >= num_samples:
-            break
-        text = item['text'].strip()
-        if len(text) > 50:  # 只使用足够长的文本
-            texts.append(text)
-
-    return texts[:num_samples]
 
 
 def main():
@@ -171,14 +152,29 @@ def main():
     before_pruning_parameters = sum(p.numel() for p in model.parameters())
     logger.log(f"剪枝前参数量: {before_pruning_parameters:,}")
 
+    # ==================== 统一数据加载 ====================
+    logger.log("\n" + "=" * 60)
+    logger.log("加载评估数据")
+    logger.log("=" * 60)
+
+    # 计算所需的最大样本数
+    max_samples = max(args.importance_samples, args.num_examples) if not args.skip_importance_analysis else args.num_examples
+
+    # 一次性加载所有需要的样本（从 wikitext2）
+    logger.log(f"从 wikitext2 加载 {max_samples} 个样本...")
+    all_samples = get_examples('wikitext', tokenizer, num_samples=max_samples, seq_len=512, split='test')
+    logger.log(f"✅ 加载完成，shape: {all_samples.shape}")
+
     # ==================== 步骤2: 评估层重要性 ====================
     if not args.skip_importance_analysis:
         logger.log("\n" + "=" * 60)
         logger.log("步骤2: 评估层重要性")
         logger.log("=" * 60)
 
-        eval_texts = load_evaluation_data(tokenizer, num_samples=args.importance_samples)
-        logger.log(f"加载了 {len(eval_texts)} 个评估样本")
+        # 将 tokenized 样本转换回文本（用于层重要性评估）
+        eval_samples = all_samples[:args.importance_samples]
+        eval_texts = [tokenizer.decode(sample, skip_special_tokens=True) for sample in eval_samples]
+        logger.log(f"准备了 {len(eval_texts)} 个样本用于层重要性评估")
 
         analyzer = LayerImportanceAnalyzer(model, tokenizer, device=args.device)
 
@@ -254,8 +250,8 @@ def main():
     logger.log("=" * 60)
     logger.log("使用GQA组级Taylor Importance，保持4:1 Q:KV比例\n")
 
-    # 准备样本数据用于计算梯度
-    example_prompts = get_examples('wikitext', tokenizer, args.num_examples, seq_len=64).to(args.device)
+    # 准备样本数据用于计算梯度（复用已加载的数据，截断到64 token）
+    example_prompts = all_samples[:args.num_examples, :64].to(args.device)
     logger.log(f"准备了 {args.num_examples} 个样本用于Taylor importance计算")
 
     # 确定要剪枝的层
