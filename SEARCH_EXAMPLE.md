@@ -1,0 +1,431 @@
+# 自动PPL优化搜索 - 使用示例
+
+本文档提供 `search_optimal_distribution.py` 的详细使用示例和最佳实践。
+
+## 快速开始
+
+### 基本使用
+
+```bash
+# 最简单的用法（使用所有默认参数）
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct
+```
+
+这将：
+1. 测试 11 个粗粒度比例（0:10, 1:9, ..., 10:0）
+2. 找到最优的两个相邻比例
+3. 在它们之间进行细粒度搜索（步长0.1）
+4. 输出全局最优比例和对应PPL
+
+---
+
+## 高级用法
+
+### 1. 指定剪枝率
+
+```bash
+# 测试30%剪枝率
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_ratio 0.30
+```
+
+### 2. 启用层冻结
+
+```bash
+# 保护最重要的3层
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_ratio 0.25 \
+    --freeze_top_n_layers 3
+```
+
+**推荐冻结层数**：
+- 小模型（7-13B）：3-5 层
+- 大模型（30B+）：5-10 层
+
+### 3. 自定义搜索配置
+
+```bash
+# 完整配置示例
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_ratio 0.25 \
+    --save_ckpt_log_name my_ppl_search_20250117 \
+    --freeze_top_n_layers 3 \
+    --layer_importance_method removal \
+    --pruning_strategy inverse
+```
+
+### 4. 加速测试（减少样本数）
+
+```bash
+# 快速测试（用于验证流程）
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_ratio 0.25 \
+    --layer_importance_samples 20 \
+    --channel_importance_samples 5
+```
+
+⚠️ **注意**：减少样本数会加快速度，但可能影响结果准确性。建议先快速测试，确认流程正常后再用完整参数。
+
+---
+
+## 输出解读
+
+### 终端输出示例
+
+```
+============================================================
+开始PPL优化搜索
+============================================================
+基础模型: /newdata/LLMs/Llama-3-8B-Instruct
+总剪枝率: 25.00%
+额外参数: --freeze_top_n_layers 3
+
+============================================================
+阶段1: 粗粒度搜索 (步长=1)
+============================================================
+
+============================================================
+开始实验: Attention:MLP = 0.0:10.0
+============================================================
+执行命令: python llama3_unbalanced_pruning_gqa_aware.py ...
+✅ 实验完成: 0.0:10.0 -> PPL = 46.87
+
+============================================================
+开始实验: Attention:MLP = 1.0:9.0
+============================================================
+执行命令: python llama3_unbalanced_pruning_gqa_aware.py ...
+✅ 实验完成: 1.0:9.0 -> PPL = 73.59
+
+[... 继续测试其他比例 ...]
+
+粗粒度搜索结果（按PPL升序）:
+  1. 0.0:10.0 -> PPL = 46.87
+  2. 1.0:9.0 -> PPL = 73.59
+  3. 2.0:8.0 -> PPL = 83.77
+  4. 3.0:7.0 -> PPL = 137.70
+  5. 5.0:5.0 -> PPL = 142.35
+
+✅ 粗粒度搜索最佳: 0.0:10.0 (PPL = 46.87)
+选择相邻比例: 1.0:9.0
+
+============================================================
+阶段2: 细粒度搜索 (步长=0.1)
+搜索区间: 0.0:10.0 到 1.0:9.0
+============================================================
+
+[测试 0.1:9.9, 0.2:9.8, 0.3:9.7, ..., 0.9:9.1]
+
+✅ 实验完成: 0.1:9.9 -> PPL = 46.23
+✅ 实验完成: 0.2:9.8 -> PPL = 45.89
+✅ 实验完成: 0.3:9.7 -> PPL = 45.12
+✅ 实验完成: 0.4:9.6 -> PPL = 47.23
+...
+
+============================================================
+细粒度搜索完成
+============================================================
+✅ 全局最优: 0.3:9.7 (PPL = 45.12)
+
+============================================================
+搜索完成
+============================================================
+总耗时: 4:32:15
+测试次数: 20
+最优比例: 0.3:9.7
+最优PPL: 45.12
+结果已保存到: prune_log/my_ppl_search/search_results.json
+
+所有测试结果（按PPL升序）:
+  🏆  1. 0.3:9.7 -> PPL =   45.12
+      2. 0.2:9.8 -> PPL =   45.89
+      3. 0.1:9.9 -> PPL =   46.23
+      4. 0.0:10.0 -> PPL =   46.87
+      5. 0.4:9.6 -> PPL =   47.23
+      6. 0.5:9.5 -> PPL =   52.34
+      7. 0.6:9.4 -> PPL =   58.91
+      8. 0.7:9.3 -> PPL =   65.12
+      9. 0.8:9.2 -> PPL =   69.45
+     10. 0.9:9.1 -> PPL =   71.23
+     11. 1.0:9.0 -> PPL =   73.59
+     12. 2.0:8.0 -> PPL =   83.77
+     13. 3.0:7.0 -> PPL =  137.70
+     [...]
+
+🎉 搜索成功！
+最优 Attention:MLP 比例: 0.3:9.7
+对应的 PPL: 45.12
+
+可使用以下命令进行最优比例剪枝:
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_distribution 0.3:9.7 \
+    --pruning_ratio 0.25 \
+    --freeze_top_n_layers 3 \
+    --save_model --test_after_prune
+```
+
+### 输出文件
+
+搜索完成后，结果保存在 `prune_log/<experiment_name>/` 目录下：
+
+```
+prune_log/my_ppl_search/
+├── search_results.json          # 所有测试结果（JSON格式）
+├── search.log                   # 详细搜索日志
+├── ratio_0_0_10_0/              # 每个比例的剪枝日志
+│   └── <timestamp>/
+│       └── training.log
+├── ratio_0_1_9_9/
+├── ratio_0_2_9_8/
+└── ...
+```
+
+**search_results.json 示例**：
+
+```json
+{
+  "timestamp": "2025-01-17T15:30:45.123456",
+  "base_model": "/newdata/LLMs/Llama-3-8B-Instruct",
+  "pruning_ratio": 0.25,
+  "results": {
+    "0.0:10.0": 46.87,
+    "1.0:9.0": 73.59,
+    "2.0:8.0": 83.77,
+    "0.3:9.7": 45.12,
+    "0.2:9.8": 45.89,
+    ...
+  },
+  "best_ratio": "0.3:9.7",
+  "best_ppl": 45.12
+}
+```
+
+---
+
+## 实战案例
+
+### 案例1：基于您的实验数据
+
+根据您提供的实验结果：
+- 0:10 → PPL = 46.87
+- 1:9 → PPL = 73.59
+- 2:8 → PPL = 83.77
+- 3:7 → PPL = 137.70
+
+最优区间在 **0:10 到 1:9** 之间。使用搜索脚本会自动在这个区间细化搜索：
+
+```bash
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_ratio 0.25
+```
+
+预期会找到类似 **0.3:9.7** 或 **0.5:9.5** 的最优比例。
+
+### 案例2：不同剪枝率对比
+
+```bash
+# 测试 20% 剪枝率的最优比例
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_ratio 0.20 \
+    --save_ckpt_log_name search_20pct
+
+# 测试 30% 剪枝率的最优比例
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_ratio 0.30 \
+    --save_ckpt_log_name search_30pct
+```
+
+对比两个剪枝率的最优分布，分析趋势。
+
+### 案例3：层冻结对比实验
+
+```bash
+# 不冻结层
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name search_no_freeze
+
+# 冻结3层
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --freeze_top_n_layers 3 \
+    --save_ckpt_log_name search_freeze_3
+
+# 冻结5层
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --freeze_top_n_layers 5 \
+    --save_ckpt_log_name search_freeze_5
+```
+
+对比冻结不同层数的最优PPL，评估层冻结的效果。
+
+---
+
+## 最佳实践
+
+### 1. 验证流程
+
+在正式运行长时间搜索前，先快速验证：
+
+```bash
+# 快速验证（仅测试 0:10 和 10:0）
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_distribution 0:10 \
+    --layer_importance_samples 10 \
+    --channel_importance_samples 5 \
+    --test_after_prune
+
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_distribution 10:0 \
+    --layer_importance_samples 10 \
+    --channel_importance_samples 5 \
+    --test_after_prune
+```
+
+确认流程无误后再运行完整搜索。
+
+### 2. 分阶段执行
+
+如果担心完整搜索时间过长，可以分阶段执行：
+
+```bash
+# 阶段1：只做粗粒度搜索（手动）
+for dist in 0:10 1:9 2:8 3:7 4:6 5:5 6:4 7:3 8:2 9:1 10:0; do
+    python llama3_unbalanced_pruning_gqa_aware.py \
+        --pruning_distribution $dist \
+        --test_after_prune
+done
+
+# 分析结果，找到最优区间
+
+# 阶段2：在最优区间细化搜索
+for i in {1..9}; do
+    ratio=$(echo "scale=1; $i/10" | bc)
+    ratio2=$(echo "scale=1; 10-$ratio" | bc)
+    python llama3_unbalanced_pruning_gqa_aware.py \
+        --pruning_distribution ${ratio}:${ratio2} \
+        --test_after_prune
+done
+```
+
+### 3. 并行加速
+
+如果有多个GPU，可以手动并行：
+
+```bash
+# GPU 0: 测试 0:10 到 5:5
+CUDA_VISIBLE_DEVICES=0 python search_optimal_distribution.py \
+    --base_model /path/to/model \
+    --save_ckpt_log_name search_gpu0 &
+
+# GPU 1: 手动测试其他比例
+CUDA_VISIBLE_DEVICES=1 python llama3_unbalanced_pruning_gqa_aware.py \
+    --pruning_distribution 6:4 \
+    --test_after_prune &
+
+# 等待所有任务完成
+wait
+```
+
+### 4. 监控进度
+
+搜索过程中可以实时查看进度：
+
+```bash
+# 查看当前搜索日志
+tail -f prune_log/my_ppl_search/search.log
+
+# 查看已完成的结果
+cat prune_log/my_ppl_search/search_results.json | python -m json.tool
+```
+
+---
+
+## 故障排除
+
+### 问题1：搜索卡住不动
+
+**症状**：长时间没有输出
+
+**解决方法**：
+1. 检查是否有GPU资源被占用
+2. 查看子进程日志：`tail -f prune_log/<experiment_name>/ratio_*/*/training.log`
+3. 检查内存是否不足（OOM）
+
+### 问题2：PPL提取失败
+
+**症状**：看到 "❌ 无法从输出中提取PPL"
+
+**解决方法**：
+1. 检查子实验的日志，查看是否成功运行
+2. 确认使用了 `--test_after_prune` 参数
+3. 手动运行一次剪枝脚本，确认PPL输出格式
+
+### 问题3：中途中断后如何恢复
+
+**方法**：
+1. 查看 `search_results.json`，确认已完成的比例
+2. 手动补充未完成的比例测试
+3. 合并结果到同一个JSON文件
+
+---
+
+## 性能优化建议
+
+| 优化方法 | 时间节省 | 准确性影响 |
+|---------|---------|-----------|
+| 减少 `layer_importance_samples` (50→20) | ~30% | 小 |
+| 减少 `channel_importance_samples` (10→5) | ~20% | 小 |
+| 跳过层重要性分析（复用配置） | ~40% | 无（需先运行一次） |
+| 使用更快的GPU（A100 vs V100） | ~50% | 无 |
+| 多GPU并行（手动分配） | ~2-4x | 无 |
+
+**推荐配置**（快速测试）：
+```bash
+python search_optimal_distribution.py \
+    --base_model /path/to/model \
+    --layer_importance_samples 20 \
+    --channel_importance_samples 5
+```
+
+**推荐配置**（生产环境）：
+```bash
+python search_optimal_distribution.py \
+    --base_model /path/to/model \
+    --layer_importance_samples 50 \
+    --channel_importance_samples 10
+```
+
+---
+
+## 总结
+
+自动搜索脚本可以大幅简化最优剪枝比例的寻找过程：
+
+✅ **优点**：
+- 全自动化，无需人工干预
+- 两阶段策略高效且精确
+- 结果可复现，保存完整历史
+
+⚠️ **注意**：
+- 完整搜索需要数小时
+- 建议先验证流程再运行
+- 可以随时中断，结果已保存
+
+🎯 **适用场景**：
+- 新模型首次剪枝，不确定最优比例
+- 对比不同剪枝率或层冻结配置
+- 需要系统性探索参数空间
+
+祝您找到最优的剪枝配置！🎉
