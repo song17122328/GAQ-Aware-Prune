@@ -50,6 +50,11 @@ class PPLMetric:
         self.stride = stride if stride is not None else seq_len
         self.batch_size = batch_size
 
+        # 确保 tokenizer 有 pad_token (Llama 等模型默认没有)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+
         # 确保模型在正确的设备上
         if hasattr(model, 'to'):
             self.model.to(device)

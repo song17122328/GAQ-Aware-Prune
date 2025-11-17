@@ -148,6 +148,13 @@ def main():
     logger.log("=" * 80)
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
+
+    # 确保 tokenizer 有 pad_token (Llama 等模型默认没有)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+        logger.log("设置 pad_token = eos_token")
+
     model = LlamaForCausalLM.from_pretrained(
         args.base_model,
         device_map=args.device,

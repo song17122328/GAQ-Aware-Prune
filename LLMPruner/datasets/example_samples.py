@@ -64,6 +64,11 @@ def get_examples(
 
     texts = texts[:num_samples]
 
+    # 确保 tokenizer 有 pad_token (Llama 等模型默认没有)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+
     # Tokenization
     encodings = tokenizer(
         texts,
@@ -92,6 +97,11 @@ def get_examples_from_text(
     Returns:
         torch.Tensor: tokenized input_ids
     """
+    # 确保 tokenizer 有 pad_token (Llama 等模型默认没有)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+
     encodings = tokenizer(
         texts,
         return_tensors='pt',
