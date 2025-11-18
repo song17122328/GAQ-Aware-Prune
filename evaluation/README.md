@@ -90,6 +90,45 @@ python evaluation/run_evaluation.py \
 
 ---
 
+## ⚠️ 重要说明：.bin Checkpoint 支持
+
+**好消息**：剪枝后的`.bin` checkpoint文件可以**直接用于所有评估**，无需转换为HF格式！
+
+### 问题背景
+剪枝后的模型使用per-layer不均衡结构（每层头数/MLP维度不同），而HuggingFace的config.json是全局配置，无法表示这种结构。转换为HF格式会导致维度不匹配错误：
+```
+RuntimeError: size mismatch for weight: copying a param with shape torch.Size([4096, 7552])
+from checkpoint, the shape in current model is torch.Size([4096, 14336]).
+```
+
+### 解决方案
+评估脚本已内置自定义加载器，自动处理`.bin`文件：
+
+```bash
+# ✅ 直接使用.bin文件（推荐）
+python evaluation/run_evaluation.py \
+    --model_path prune_log/xxx/pytorch_model.bin \
+    --metrics ppl,zeroshot,speed,memory \
+    --output results/ours.json
+
+# ✅ 也支持HF格式目录
+python evaluation/run_evaluation.py \
+    --model_path /newdata/LLMs/Llama-3-8B-Instruct \
+    --metrics all \
+    --output results/original.json
+```
+
+**技术细节**：
+- PPL/速度/内存：使用自定义加载器，完全支持
+- Zero-shot：使用HFLM包装器，将.bin模型包装为lm-eval兼容格式
+- Few-shot：同上
+
+**不再需要**：
+- ❌ `convert_checkpoint_to_hf.py`（已过时）
+- ❌ 手动转换checkpoint
+
+---
+
 ## 📊 支持的评估指标
 
 ### 性能指标
@@ -138,8 +177,8 @@ model, tokenizer = load_model_and_tokenizer('/path/to/model')
 ppl_results = evaluate_ppl(model, tokenizer, datasets=['wikitext2', 'ptb'])
 print(ppl_results)  # {'wikitext2 (wikitext-2-raw-v1)': 38.46, ...}
 
-# 评估Zero-shot（需要HF格式模型）
-zeroshot_results = evaluate_zeroshot('/path/to/model', tasks=['hellaswag', 'piqa'])
+# 评估Zero-shot（支持HF目录或.bin文件）
+zeroshot_results = evaluate_zeroshot('/path/to/model_or_checkpoint.bin', tasks=['hellaswag', 'piqa'])
 print(zeroshot_results)
 ```
 
