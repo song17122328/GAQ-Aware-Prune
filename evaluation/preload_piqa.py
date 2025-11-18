@@ -38,7 +38,7 @@ def generate_lm_eval_task(valid_file):
     yaml_path = os.path.join(tasks_dir, 'piqa_local.yaml')
 
     # 生成 YAML 内容（使用绝对路径）
-    # 注意：使用 test 作为 data_files 的 key，配合 test_split: test
+    # 注意：使用官方 PIQA 的 prompt 格式
     yaml_content = f"""task: piqa_local
 dataset_path: json
 dataset_kwargs:
@@ -46,8 +46,8 @@ dataset_kwargs:
     test: {valid_file}
 output_type: multiple_choice
 test_split: test
-doc_to_text: "Question: {{{{goal}}}}\\nAnswer:"
-doc_to_target: "{{{{label | int}}}}"
+doc_to_text: "Goal: {{{{goal}}}}\\n"
+doc_to_target: "{{{{label}}}}"
 doc_to_choice:
   - "{{{{sol1}}}}"
   - "{{{{sol2}}}}"
