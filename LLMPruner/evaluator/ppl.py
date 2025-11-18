@@ -137,20 +137,39 @@ class PPLMetric:
 
         # PTB (Penn TreeBank)
         elif dataset_name_lower in ['ptb', 'penn-treebank', 'penn_treebank']:
-            try:
-                # 尝试多个可能的PTB数据集来源
+            import os
+            from datasets import load_from_disk
+
+            # 优先尝试从本地缓存加载
+            local_ptb_path = os.path.expanduser("~/.cache/huggingface/datasets/ptb_text_only")
+            if os.path.exists(local_ptb_path):
+                print(f"  从本地缓存加载 PTB: {local_ptb_path}")
                 try:
-                    dataset = load_dataset('ptb_text_only', 'penn_treebank', split='test')
-                    text_field = 'sentence' if 'sentence' in dataset.column_names else 'text'
-                except:
-                    # 备选方案
-                    dataset = load_dataset('ptb-text-only', split='test')
-                    text_field = 'sentence' if 'sentence' in dataset.column_names else 'text'
-            except Exception as e:
-                raise ValueError(
-                    f"无法加载PTB数据集: {e}\n"
-                    f"建议：1) 使用wikitext2替代，或 2) 手动下载PTB数据集"
-                )
+                    dataset = load_from_disk(local_ptb_path)
+                    dataset = dataset['test']
+                    text_field = 'sentence'
+                except Exception as e:
+                    print(f"  本地加载失败: {e}，尝试在线加载...")
+                    dataset = None
+            else:
+                dataset = None
+
+            # 如果本地没有，尝试在线加载
+            if dataset is None:
+                try:
+                    # 尝试多个可能的PTB数据集来源
+                    try:
+                        dataset = load_dataset('ptb_text_only', 'penn_treebank', split='test')
+                        text_field = 'sentence' if 'sentence' in dataset.column_names else 'text'
+                    except:
+                        # 备选方案
+                        dataset = load_dataset('ptb-text-only', split='test')
+                        text_field = 'sentence' if 'sentence' in dataset.column_names else 'text'
+                except Exception as e:
+                    raise ValueError(
+                        f"无法加载PTB数据集: {e}\n"
+                        f"建议：运行 python evaluation/preload_ptb.py 下载数据集"
+                    )
 
         # C4
         elif dataset_name_lower in ['c4']:
