@@ -45,6 +45,7 @@ from evaluation.utils.model_loader import (
     print_model_info,
     cleanup_model
 )
+from evaluation.utils.get_best_gpu import get_best_gpu
 
 
 def evaluate_single_model(
@@ -291,7 +292,9 @@ def main():
     parser.add_argument('--output', type=str, required=True,
                        help='输出文件路径（.json或.md）')
     parser.add_argument('--device', type=str, default='cuda',
-                       help='设备: cuda/cpu')
+                       help='设备: cuda/cpu 或 cuda:N 指定GPU')
+    parser.add_argument('--auto_select_gpu', action='store_true',
+                       help='自动选择剩余显存最多的GPU（会覆盖--device）')
 
     # 评估配置
     parser.add_argument('--ppl_datasets', type=str, default='wikitext2,ptb',
@@ -303,6 +306,12 @@ def main():
                        help='速度测试样本数')
 
     args = parser.parse_args()
+
+    # 自动选择GPU
+    if args.auto_select_gpu:
+        gpu_id = get_best_gpu()
+        args.device = f'cuda:{gpu_id}'
+        print(f"✓ 自动选择GPU: {args.device}\n")
 
     # 对比模式
     if args.compare:

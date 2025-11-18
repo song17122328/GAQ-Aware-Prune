@@ -156,15 +156,21 @@ class PPLMetric:
         elif dataset_name_lower in ['c4']:
             try:
                 print("  注意：C4数据集较大，只加载validation集的前10000个样本")
-                # C4很大，只加载en的validation集的一个子集
-                dataset = load_dataset('c4', 'en', split='validation', streaming=False)
+                # 新版datasets需要使用allenai/c4
+                try:
+                    dataset = load_dataset('allenai/c4', 'en', split='validation', streaming=False, trust_remote_code=True)
+                except:
+                    # 尝试旧版路径
+                    dataset = load_dataset('c4', 'en', split='validation', streaming=False, trust_remote_code=True)
                 # 只取前10000个样本以加速
-                dataset = dataset.select(range(min(10000, len(dataset))))
+                if hasattr(dataset, 'select'):
+                    dataset = dataset.select(range(min(10000, len(dataset))))
                 text_field = 'text'
             except Exception as e:
                 raise ValueError(
                     f"无法加载C4数据集: {e}\n"
-                    f"建议：使用wikitext2或ptb替代（C4数据集体积大且下载慢）"
+                    f"建议：使用wikitext2替代（C4数据集体积大且下载慢）\n"
+                    f"或手动下载：见 evaluation/docs/dataset_download.md"
                 )
 
         else:
