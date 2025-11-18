@@ -41,7 +41,7 @@ dataset_kwargs:
 output_type: multiple_choice
 test_split: test
 doc_to_text: "Question: {{{{question}}}}\\nAnswer:"
-doc_to_target: answerKey
+doc_to_target: "{{{{choices.label.index(answerKey)}}}}"
 doc_to_choice: "{{{{choices.text}}}}"
 metric_list:
   - metric: acc
@@ -66,7 +66,7 @@ dataset_kwargs:
 output_type: multiple_choice
 test_split: test
 doc_to_text: "Question: {{{{question}}}}\\nAnswer:"
-doc_to_target: answerKey
+doc_to_target: "{{{{choices.label.index(answerKey)}}}}"
 doc_to_choice: "{{{{choices.text}}}}"
 metric_list:
   - metric: acc
