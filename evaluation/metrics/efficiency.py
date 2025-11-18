@@ -218,8 +218,8 @@ def measure_memory_usage(
     # 提取GPU编号
     device_id = int(device.split(':')[1]) if ':' in device else 0
 
-    # 清空缓存
-    torch.cuda.empty_cache(device_id)
+    # 清空缓存（empty_cache不接受参数，清空所有GPU）
+    torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats(device_id)
 
     # 测量模型加载显存
