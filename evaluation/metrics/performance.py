@@ -56,8 +56,8 @@ def evaluate_ppl(
                 device=device
             )
 
-            # PPLMetric返回的是类似dict的对象
-            for key, value in ppl_metric.items():
+            # PPLMetric有.results属性存储结果字典
+            for key, value in ppl_metric.results.items():
                 results[key] = value
                 print(f"  ✓ {key}: {value:.2f}")
 

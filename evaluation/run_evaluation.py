@@ -336,7 +336,9 @@ def main():
     )
 
     # 保存结果
-    os.makedirs(os.path.dirname(args.output), exist_ok=True)
+    output_dir = os.path.dirname(args.output)
+    if output_dir:  # 只有当有目录部分时才创建
+        os.makedirs(output_dir, exist_ok=True)
     with open(args.output, 'w') as f:
         json.dump(results, f, indent=2)
 
