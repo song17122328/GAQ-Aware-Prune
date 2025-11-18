@@ -300,7 +300,7 @@ def main():
     parser.add_argument('--ppl_datasets', type=str, default='wikitext2,ptb',
                        help='PPL数据集（逗号分隔）')
     parser.add_argument('--zeroshot_tasks', type=str,
-                       default='hellaswag,piqa,winogrande,arc_easy,boolq',
+                       default='hellaswag,winogrande,arc_easy,boolq',
                        help='Zero-shot任务（逗号分隔）')
     parser.add_argument('--speed_samples', type=int, default=50,
                        help='速度测试样本数')
