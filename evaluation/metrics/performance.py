@@ -110,6 +110,7 @@ def evaluate_zeroshot(
     try:
         import lm_eval
         from lm_eval.models.huggingface import HFLM
+        from lm_eval.tasks import TaskManager
 
         # 检查是否需要使用本地 PIQA
         use_local_piqa = False
@@ -159,7 +160,7 @@ def evaluate_zeroshot(
             }
             # 如果使用本地 PIQA，添加自定义任务目录
             if use_local_piqa and os.path.exists(tasks_dir):
-                eval_kwargs["task_manager"] = lm_eval.tasks.TaskManager(include_path=tasks_dir)
+                eval_kwargs["task_manager"] = TaskManager(include_path=tasks_dir)
 
             results = lm_eval.simple_evaluate(**eval_kwargs)
         else:
@@ -173,7 +174,7 @@ def evaluate_zeroshot(
             }
             # 如果使用本地 PIQA，添加自定义任务目录
             if use_local_piqa and os.path.exists(tasks_dir):
-                eval_kwargs["task_manager"] = lm_eval.tasks.TaskManager(include_path=tasks_dir)
+                eval_kwargs["task_manager"] = TaskManager(include_path=tasks_dir)
 
             results = lm_eval.simple_evaluate(**eval_kwargs)
 
