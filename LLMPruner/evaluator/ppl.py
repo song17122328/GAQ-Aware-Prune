@@ -114,18 +114,64 @@ class PPLMetric:
         """
         加载数据集并tokenize
 
+        支持从本地或HuggingFace Hub加载多种数据集
+
         Args:
             dataset_name: 数据集名称
 
         Returns:
             torch.Tensor: tokenized数据
         """
-        # 只支持 wikitext2 数据集
-        if dataset_name.lower() in ['wikitext', 'wikitext2', 'wikitext-2']:
-            dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
+        dataset_name_lower = dataset_name.lower()
+
+        print(f"加载数据集: {dataset_name}")
+
+        # WikiText2
+        if dataset_name_lower in ['wikitext', 'wikitext2', 'wikitext-2']:
+            try:
+                dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
+            except:
+                # 尝试从本地缓存加载
+                dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test', cache_dir='./data')
             text_field = 'text'
+
+        # PTB (Penn TreeBank)
+        elif dataset_name_lower in ['ptb', 'penn-treebank', 'penn_treebank']:
+            try:
+                # 尝试多个可能的PTB数据集来源
+                try:
+                    dataset = load_dataset('ptb_text_only', 'penn_treebank', split='test')
+                    text_field = 'sentence' if 'sentence' in dataset.column_names else 'text'
+                except:
+                    # 备选方案
+                    dataset = load_dataset('ptb-text-only', split='test')
+                    text_field = 'sentence' if 'sentence' in dataset.column_names else 'text'
+            except Exception as e:
+                raise ValueError(
+                    f"无法加载PTB数据集: {e}\n"
+                    f"建议：1) 使用wikitext2替代，或 2) 手动下载PTB数据集"
+                )
+
+        # C4
+        elif dataset_name_lower in ['c4']:
+            try:
+                print("  注意：C4数据集较大，只加载validation集的前10000个样本")
+                # C4很大，只加载en的validation集的一个子集
+                dataset = load_dataset('c4', 'en', split='validation', streaming=False)
+                # 只取前10000个样本以加速
+                dataset = dataset.select(range(min(10000, len(dataset))))
+                text_field = 'text'
+            except Exception as e:
+                raise ValueError(
+                    f"无法加载C4数据集: {e}\n"
+                    f"建议：使用wikitext2或ptb替代（C4数据集体积大且下载慢）"
+                )
+
         else:
-            raise ValueError(f"不支持的数据集: {dataset_name}. 当前仅支持 wikitext2")
+            raise ValueError(
+                f"不支持的数据集: {dataset_name}\n"
+                f"当前支持: wikitext2, ptb, c4"
+            )
 
         # 合并所有文本
         if isinstance(dataset, list):
@@ -135,6 +181,8 @@ class PPLMetric:
 
         # 过滤空文本并合并
         text = '\n\n'.join([t for t in texts if t.strip()])
+
+        print(f"  数据集加载完成，总字符数: {len(text):,}")
 
         # Tokenize整个文本
         encodings = self.tokenizer(
