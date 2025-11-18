@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-预下载所有评估所需的数据集
+预下载所有评估所需的数据集,请先运行 HF_ENDPOINT="https://hf-mirror.com"
 
 背景：
 - 新版datasets库（v3.0+）不再支持legacy loading scripts
@@ -13,6 +13,7 @@
 
 用法：
     # 预下载所有数据集
+    HF_ENDPOINT="https://hf-mirror.com"
     python download_all_datasets.py
 
     # 如果之前下载失败，先清理缓存
@@ -48,7 +49,7 @@ def download_dataset(name, path, config=None, split='test'):
 
 
 def main():
-    print("开始下载评估数据集...")
+    print("开始下载评估数据集...,如果没有配置镜像，请先配置镜像‘HF_ENDPOINT='https://hf-mirror.com'’")
     print("提示：数据集会缓存到 ~/.cache/huggingface/datasets/")
 
     success = []
