@@ -111,6 +111,23 @@ def evaluate_zeroshot(
         import lm_eval
         from lm_eval.models.huggingface import HFLM
 
+        # 检查是否需要使用本地 PIQA
+        use_local_piqa = False
+        if 'piqa' in tasks:
+            # 检查本地 PIQA 数据是否存在
+            import os
+            piqa_cache = os.path.expanduser("~/.cache/huggingface/hub/datasets--ybisk--piqa")
+            if os.path.exists(piqa_cache):
+                print("检测到本地 PIQA 数据，将使用 piqa_local 任务...")
+                use_local_piqa = True
+                # 替换 piqa 为 piqa_local
+                tasks = [t if t != 'piqa' else 'piqa_local' for t in tasks]
+            else:
+                print("警告: 未找到本地 PIQA 数据，将尝试在线下载...")
+
+        # 获取自定义任务目录
+        tasks_dir = os.path.join(os.path.dirname(__file__), '..', 'tasks')
+
         print("开始评估...")
 
         # 检查是否是checkpoint文件
@@ -134,20 +151,30 @@ def evaluate_zeroshot(
             )
 
             # 使用包装后的模型进行评估
-            results = lm_eval.simple_evaluate(
-                model=lm,
-                tasks=tasks,
-                log_samples=False
-            )
+            eval_kwargs = {
+                "model": lm,
+                "tasks": tasks,
+                "log_samples": False
+            }
+            # 如果使用本地 PIQA，添加自定义任务目录
+            if use_local_piqa and os.path.exists(tasks_dir):
+                eval_kwargs["task_manager"] = lm_eval.tasks.TaskManager(include_path=tasks_dir)
+
+            results = lm_eval.simple_evaluate(**eval_kwargs)
         else:
             # HF格式，直接使用路径
-            results = lm_eval.simple_evaluate(
-                model="hf",
-                model_args=f"pretrained={model_path},dtype=float16,device={device}",
-                tasks=tasks,
-                batch_size=batch_size,
-                log_samples=False
-            )
+            eval_kwargs = {
+                "model": "hf",
+                "model_args": f"pretrained={model_path},dtype=float16,device={device}",
+                "tasks": tasks,
+                "batch_size": batch_size,
+                "log_samples": False
+            }
+            # 如果使用本地 PIQA，添加自定义任务目录
+            if use_local_piqa and os.path.exists(tasks_dir):
+                eval_kwargs["task_manager"] = lm_eval.tasks.TaskManager(include_path=tasks_dir)
+
+            results = lm_eval.simple_evaluate(**eval_kwargs)
 
         # 提取关键结果
         summary = {}
@@ -164,12 +191,15 @@ def evaluate_zeroshot(
                     elif 'acc' in key and acc is None:
                         acc = value
 
-                summary[task] = {
+                # 将 piqa_local 映射回 piqa
+                result_task_name = 'piqa' if task == 'piqa_local' else task
+
+                summary[result_task_name] = {
                     'accuracy': acc,
                     'full_results': task_results
                 }
 
-                print(f"  ✓ {task}: {acc*100:.2f}%" if acc is not None else f"  ✓ {task}: N/A")
+                print(f"  ✓ {result_task_name}: {acc*100:.2f}%" if acc is not None else f"  ✓ {result_task_name}: N/A")
 
         return summary
 
