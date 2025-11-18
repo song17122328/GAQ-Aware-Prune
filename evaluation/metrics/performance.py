@@ -153,12 +153,14 @@ def evaluate_zeroshot(
             if task in results['results']:
                 task_results = results['results'][task]
                 # 提取准确率（不同任务的metric名称可能不同）
-                if 'acc_norm' in task_results:
-                    acc = task_results['acc_norm']
-                elif 'acc' in task_results:
-                    acc = task_results['acc']
-                else:
-                    acc = None
+                # 新版lm-eval的key格式为 'acc_norm,none' 或 'acc,none'
+                acc = None
+                for key, value in task_results.items():
+                    if 'acc_norm' in key:
+                        acc = value
+                        break
+                    elif 'acc' in key and acc is None:
+                        acc = value
 
                 summary[task] = {
                     'accuracy': acc,
@@ -252,10 +254,12 @@ def evaluate_fewshot(
         for task in tasks:
             if task in results['results']:
                 task_results = results['results'][task]
-                if 'acc' in task_results:
-                    acc = task_results['acc']
-                else:
-                    acc = None
+                # 新版lm-eval的key格式为 'acc,none' 等
+                acc = None
+                for key, value in task_results.items():
+                    if 'acc' in key:
+                        acc = value
+                        break
 
                 summary[task] = {
                     'accuracy': acc,
