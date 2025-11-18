@@ -78,7 +78,7 @@ def evaluate_zeroshot(
     使用lm-evaluation-harness评估Zero-shot任务
 
     Args:
-        model_path: 模型路径（HF格式或checkpoint路径）
+        model_path: 模型路径（支持HF目录或.bin checkpoint）
         tasks: 任务列表，默认为常用的5个任务
         batch_size: 批次大小
         device: 设备
@@ -87,8 +87,9 @@ def evaluate_zeroshot(
         评估结果字典
 
     注意：
-        需要安装 lm-eval: pip install lm-eval
-        checkpoint需要先转换为HF格式，或者临时保存
+        - 支持HF格式目录和.bin checkpoint文件
+        - 需要安装 lm-eval: pip install lm-eval
+        - .bin文件会自动使用自定义加载器
     """
     if tasks is None:
         tasks = [
@@ -102,30 +103,49 @@ def evaluate_zeroshot(
     print(f"\n{'='*60}")
     print(f"评估 Zero-shot 任务")
     print(f"{'='*60}")
-    print(f"任务: {', '.join(tasks)}")
+    print(f"任务: {', '.join(tasks)}\n")
 
     try:
         import lm_eval
         from lm_eval.models.huggingface import HFLM
 
+        print("开始评估...")
+
         # 检查是否是checkpoint文件
         if model_path.endswith('.bin'):
-            print("⚠️  检测到checkpoint文件，需要先转换为HF格式")
-            print("请使用以下方式之一:")
-            print("  1. 在剪枝时使用 --save_model 保存完整模型目录")
-            print("  2. 手动转换checkpoint为HF格式")
-            return None
+            print("检测到.bin格式，使用自定义加载器...")
+            from evaluation.utils.model_loader import load_model_and_tokenizer
 
-        # 使用lm-eval评估
-        print(f"\n开始评估...")
+            # 加载剪枝后的模型
+            model, tokenizer = load_model_and_tokenizer(
+                model_path,
+                device=device,
+                force_single_device=True
+            )
 
-        results = lm_eval.simple_evaluate(
-            model="hf",
-            model_args=f"pretrained={model_path},dtype=float16,device={device}",
-            tasks=tasks,
-            batch_size=batch_size,
-            log_samples=False
-        )
+            # 使用HFLM包装预加载的模型
+            # lm-eval支持直接传入model对象
+            lm = HFLM(
+                pretrained=model,
+                tokenizer=tokenizer,
+                batch_size=batch_size
+            )
+
+            # 使用包装后的模型进行评估
+            results = lm_eval.simple_evaluate(
+                model=lm,
+                tasks=tasks,
+                log_samples=False
+            )
+        else:
+            # HF格式，直接使用路径
+            results = lm_eval.simple_evaluate(
+                model="hf",
+                model_args=f"pretrained={model_path},dtype=float16,device={device}",
+                tasks=tasks,
+                batch_size=batch_size,
+                log_samples=False
+            )
 
         # 提取关键结果
         summary = {}
@@ -172,7 +192,7 @@ def evaluate_fewshot(
     评估Few-shot任务（可选）
 
     Args:
-        model_path: 模型路径
+        model_path: 模型路径（支持HF目录或.bin checkpoint）
         tasks: 任务列表，默认为MMLU
         num_fewshot: few-shot样本数
         batch_size: 批次大小
@@ -188,19 +208,45 @@ def evaluate_fewshot(
     print(f"评估 {num_fewshot}-shot 任务")
     print(f"{'='*60}")
     print(f"任务: {', '.join(tasks)}")
-    print("⚠️  Few-shot评估较慢，建议只在最终对比时使用")
+    print("⚠️  Few-shot评估较慢，建议只在最终对比时使用\n")
 
     try:
         import lm_eval
+        from lm_eval.models.huggingface import HFLM
 
-        results = lm_eval.simple_evaluate(
-            model="hf",
-            model_args=f"pretrained={model_path},dtype=float16,device={device}",
-            tasks=tasks,
-            num_fewshot=num_fewshot,
-            batch_size=batch_size,
-            log_samples=False
-        )
+        # 检查是否是checkpoint文件
+        if model_path.endswith('.bin'):
+            print("检测到.bin格式，使用自定义加载器...")
+            from evaluation.utils.model_loader import load_model_and_tokenizer
+
+            model, tokenizer = load_model_and_tokenizer(
+                model_path,
+                device=device,
+                force_single_device=True
+            )
+
+            lm = HFLM(
+                pretrained=model,
+                tokenizer=tokenizer,
+                batch_size=batch_size
+            )
+
+            results = lm_eval.simple_evaluate(
+                model=lm,
+                tasks=tasks,
+                num_fewshot=num_fewshot,
+                log_samples=False
+            )
+        else:
+            # HF格式，直接使用路径
+            results = lm_eval.simple_evaluate(
+                model="hf",
+                model_args=f"pretrained={model_path},dtype=float16,device={device}",
+                tasks=tasks,
+                num_fewshot=num_fewshot,
+                batch_size=batch_size,
+                log_samples=False
+            )
 
         summary = {}
         for task in tasks:
