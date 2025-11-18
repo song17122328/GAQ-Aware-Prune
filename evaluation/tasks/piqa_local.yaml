@@ -2,11 +2,11 @@ task: piqa_local
 dataset_path: json
 dataset_kwargs:
   data_files:
-    validation: /data/home/yuanxiaosong/.cache/huggingface/datasets/piqa_local_jsonl/valid_with_labels.jsonl
+    test: /data/home/yuanxiaosong/.cache/huggingface/datasets/piqa_local_jsonl/valid_with_labels.jsonl
 output_type: multiple_choice
-validation_split: validation
+test_split: test
 doc_to_text: "Question: {{goal}}\nAnswer:"
-doc_to_target: label
+doc_to_target: "{{label}}"
 doc_to_choice:
   - "{{sol1}}"
   - "{{sol2}}"

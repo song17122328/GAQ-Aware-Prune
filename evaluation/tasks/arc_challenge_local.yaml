@@ -1,11 +1,12 @@
 task: arc_challenge_local
-dataset_path: /data/home/yuanxiaosong/.cache/huggingface/datasets/arc_local/arc_challenge
+dataset_path: json
+dataset_kwargs:
+  data_files:
+    test: /data/home/yuanxiaosong/.cache/huggingface/datasets/arc_local/arc_challenge_test.jsonl
 output_type: multiple_choice
-training_split: train
-validation_split: validation
 test_split: test
 doc_to_text: "Question: {{question}}\nAnswer:"
-doc_to_target: "{{answerKey}}"
+doc_to_target: "{{choices.label.index(answerKey)}}"
 doc_to_choice: "{{choices.text}}"
 metric_list:
   - metric: acc
