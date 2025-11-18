@@ -47,37 +47,73 @@ This repository implements a sophisticated neural network pruning technique spec
 ```
 GAQ-Aware-Prune/
 ├── .gitignore                                    # Git ignore file
-├── RUN.md                                        # Detailed usage documentation (Chinese)
-├── CLAUDE.md                                     # This file - AI assistant guide
-├── llama3_unbalanced_pruning_gqa_aware.py       # Main entry point script
 │
-└── LLMPruner/                                    # Core pruning library
-    ├── __init__.py                               # Package exports
-    ├── README.md                                 # Module documentation
-    │
-    ├── methods/                                  # Pruning algorithms
-    │   ├── __init__.py
-    │   └── gqa_aware.py                          # GQA-aware Taylor importance
-    │
-    ├── importance/                               # Layer importance analysis
-    │   ├── __init__.py
-    │   └── layer_analyzer.py                     # Layer importance metrics
-    │
-    ├── datasets/                                 # Data loading utilities
-    │   ├── __init__.py
-    │   └── example_samples.py                    # Sample data loaders
-    │
-    ├── evaluator/                                # Model evaluation
-    │   ├── __init__.py
-    │   └── ppl.py                                # Perplexity metrics
-    │
-    ├── trainer/                                  # Fine-tuning module
-    │   ├── __init__.py
-    │   └── finetuner.py                          # Post-pruning fine-tuning
-    │
-    └── utils/                                    # Utility functions
-        ├── logger.py                             # Logging with timestamps
-        └── get_best_gpu.py                       # Auto GPU selection
+├── DOCUMENTATION
+├── README.md                                     # Project overview and quick start
+├── CLAUDE.md                                     # This file - AI assistant guide
+├── PARAMETERS_GUIDE.md                           # Parameter selection guide
+├── SEARCH_EXAMPLE.md                             # Auto-search usage examples
+│
+├── MAIN ENTRY POINT
+├── llama3_unbalanced_pruning_gqa_aware.py       # Main pruning script
+│
+├── UTILITY SCRIPTS
+├── diagnose_model.py                             # Model health diagnostics
+├── evaluate_models.py                            # Model comparison evaluator
+├── search_optimal_distribution.py                # Auto-search for optimal Attention:MLP ratio
+├── test_finetuning.py                            # Standalone fine-tuning test
+│
+├── LLMPruner/                                    # Core pruning library
+│   ├── __init__.py                               # Package exports
+│   ├── README.md                                 # Module documentation
+│   │
+│   ├── methods/                                  # Pruning algorithms
+│   │   ├── __init__.py
+│   │   └── gqa_aware.py                          # GQA-aware Taylor importance
+│   │
+│   ├── importance/                               # Layer importance analysis
+│   │   ├── __init__.py
+│   │   └── layer_analyzer.py                     # Layer importance metrics
+│   │
+│   ├── datasets/                                 # Data loading utilities
+│   │   ├── __init__.py
+│   │   └── example_samples.py                    # Sample data loaders
+│   │
+│   ├── evaluator/                                # Model evaluation
+│   │   ├── __init__.py
+│   │   └── ppl.py                                # Perplexity metrics
+│   │
+│   ├── trainer/                                  # Fine-tuning module
+│   │   ├── __init__.py
+│   │   └── finetuner.py                          # Post-pruning fine-tuning (full + LoRA)
+│   │
+│   └── utils/                                    # Utility functions
+│       ├── logger.py                             # Logging with timestamps
+│       └── get_best_gpu.py                       # Auto GPU selection
+│
+├── evaluation/                                   # Advanced evaluation suite
+│   ├── __init__.py
+│   ├── README.md                                 # Evaluation module documentation
+│   ├── QUICKSTART.md                             # Quick start guide
+│   ├── run_evaluation.py                         # Unified evaluation script
+│   ├── convert_checkpoint_to_hf.py               # Convert checkpoints to HF format
+│   ├── clean_dataset_cache.py                    # Dataset cache cleanup
+│   │
+│   ├── metrics/                                  # Evaluation metrics
+│   │   ├── __init__.py
+│   │   ├── performance.py                        # PPL, Zero-shot, Few-shot
+│   │   └── efficiency.py                         # Throughput, memory metrics
+│   │
+│   ├── utils/                                    # Evaluation utilities
+│   │   ├── __init__.py
+│   │   ├── model_loader.py                       # Model loading utilities
+│   │   └── get_best_gpu.py                       # GPU selection
+│   │
+│   └── docs/                                     # Documentation
+│       └── dataset_download.md                   # Dataset download instructions
+│
+└── scripts/                                      # Bash scripts
+    └── evaluate_models.sh                        # Example evaluation script
 
 Output directories (gitignored):
 ├── prune_log/                                    # Experiment logs and checkpoints
@@ -97,11 +133,16 @@ Output directories (gitignored):
 | File | Purpose | When to Modify |
 |------|---------|----------------|
 | `llama3_unbalanced_pruning_gqa_aware.py` | Main orchestration script | Add new CLI arguments, modify workflow |
+| `search_optimal_distribution.py` | Auto-search for optimal Attention:MLP distribution | Modify search strategy, add search parameters |
+| `diagnose_model.py` | Model health diagnostics | Add new diagnostic checks |
+| `evaluate_models.py` | Compare multiple models | Add comparison metrics |
 | `LLMPruner/methods/gqa_aware.py` | GQA-aware pruning algorithm | Change importance calculation, modify pruning logic |
 | `LLMPruner/importance/layer_analyzer.py` | Layer importance evaluation | Add new importance metrics |
-| `LLMPruner/trainer/finetuner.py` | Post-pruning fine-tuning | Modify training loop, add optimizers |
+| `LLMPruner/trainer/finetuner.py` | Post-pruning fine-tuning (full + LoRA) | Modify training loop, add optimizers |
 | `LLMPruner/evaluator/ppl.py` | Perplexity evaluation | Add new evaluation metrics |
 | `LLMPruner/datasets/example_samples.py` | Data loading | Add new datasets |
+| `evaluation/run_evaluation.py` | Unified evaluation suite | Add new evaluation modes |
+| `evaluation/convert_checkpoint_to_hf.py` | Checkpoint format conversion | Modify conversion logic |
 
 ---
 
@@ -350,14 +391,25 @@ UnbalancedStructuredPruningCalculator(layer_importance, num_layers)
 
 ### 3. `LLMPruner.trainer.finetuner`
 
-**Purpose**: Fine-tune pruned models to recover performance
+**Purpose**: Fine-tune pruned models to recover performance (full-parameter or LoRA)
 
 **Key Class**:
 
 ```python
 FineTuner(model, tokenizer, device='cuda', logger=None)
-    .finetune(dataset_name='wikitext', num_samples=500, lr=1e-5, epochs=1, ...)
+    .finetune(dataset_name='wikitext', num_samples=500, lr=1e-5, epochs=1,
+              method='full', lora_r=8, lora_alpha=16, ...)
     # Returns: Dict with training stats (losses, etc.)
+    # method: 'full' for full-parameter, 'lora' for LoRA fine-tuning
+
+    ._setup_lora()
+    # Configures LoRA modules for attention and/or MLP layers
+
+    ._merge_lora_weights()
+    # Merges LoRA weights back into base model
+
+    ._check_model_health() -> tuple[bool, dict]
+    # Validates model weights for NaN/Inf
 
     .save_finetuned_model(save_path, layer_pruning_rates, ...)
     # Saves model + metadata
@@ -367,6 +419,7 @@ FineTuner(model, tokenizer, device='cuda', logger=None)
 - Adding new optimizers (Adam, SGD, etc.)
 - Implementing learning rate schedules
 - Adding gradient clipping or other training tricks
+- Modifying LoRA configuration (target modules, rank, etc.)
 
 ### 4. `LLMPruner.evaluator.ppl`
 
@@ -402,6 +455,34 @@ get_examples_from_text(texts, tokenizer, seq_len=128)
 - Adding support for new datasets (C4, PTB, etc.)
 - Changing tokenization strategy
 
+### 6. `evaluation` Module
+
+**Purpose**: Advanced evaluation suite for comprehensive model assessment
+
+**Key Scripts**:
+
+```python
+# evaluation/run_evaluation.py - Unified evaluation entry point
+python evaluation/run_evaluation.py \
+    --checkpoint_path prune_log/experiment/pytorch_model.bin \
+    --metrics ppl,zero_shot,efficiency \
+    --output_dir results/
+
+# evaluation/convert_checkpoint_to_hf.py - Convert to HuggingFace format
+python evaluation/convert_checkpoint_to_hf.py \
+    --checkpoint_path prune_log/experiment/pytorch_model.bin \
+    --output_dir hf_model/
+```
+
+**Metrics Available**:
+- **performance.py**: PPL, Zero-shot accuracy, Few-shot accuracy
+- **efficiency.py**: Throughput (tokens/sec), memory usage, latency
+
+**When to modify**:
+- Adding new evaluation benchmarks (MMLU, GSM8K, etc.)
+- Implementing new efficiency metrics
+- Modifying report generation
+
 ---
 
 ## Running Experiments
@@ -413,15 +494,42 @@ python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name llama3_pruned_25pct \
     --pruning_ratio 0.25 \
+    --pruning_distribution 5:5 \
     --layer_importance_method removal \
     --pruning_strategy inverse \
-    --prune_mlp \
     --save_model \
     --test_after_prune \
     --finetune \
     --finetune_lr 1e-5 \
     --finetune_epochs 1 \
     --finetune_samples 500
+```
+
+### Quick Start (LoRA Fine-tuning)
+
+```bash
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name llama3_pruned_lora \
+    --pruning_ratio 0.25 \
+    --save_model \
+    --finetune \
+    --finetune_method lora \
+    --lora_r 8 \
+    --lora_alpha 16 \
+    --finetune_samples 1000 \
+    --test_after_prune
+```
+
+### Auto-Search for Optimal Distribution
+
+```bash
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_ratio 0.25 \
+    --coarse_step 1 \
+    --fine_step 0.1 \
+    --save_results search_results/
 ```
 
 ### Debug Mode (Fast Testing)
@@ -450,6 +558,12 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 | `--save_ckpt_log_name` | str | `llama_gqa_aware_prune` | Experiment name for logs |
 | `--pruning_ratio` | float | `0.25` | Target overall pruning rate (0.25 = 25%) |
 
+#### Pruning Distribution Arguments
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--pruning_distribution` | str | `5:5` | Attention:MLP pruning ratio (e.g., `6:4`, `5.5:4.5`) |
+
 #### Layer Importance Arguments
 
 | Argument | Type | Default | Description |
@@ -464,28 +578,52 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `--pruning_strategy` | str | `inverse` | `inverse`, `proportional`, or `uniform` |
-| `--alpha` | float | `1.0` | Importance weight coefficient (0.5-3.0) |
-| `--min_pruning_rate` | float | `0.15` | Minimum per-layer pruning rate |
-| `--max_pruning_rate` | float | `0.5` | Maximum per-layer pruning rate |
+| `--layer_importance_weight` | float | `1.0` | Layer difference coefficient (0.5-3.0) |
+| `--min_pruning_rate` | float | `0.0` | Minimum per-layer pruning rate |
+| `--max_pruning_rate` | float | `1.0` | Maximum per-layer pruning rate |
+| `--freeze_top_n_layers` | int | `0` | Freeze most important N layers (no pruning) |
+
+#### GQA Configuration Arguments
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--head_dim` | int | `128` | Attention head dimension |
+| `--gqa_ratio` | int | `4` | Q:KV head ratio |
 
 #### Fine-tuning Arguments
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `--finetune` | flag | `False` | Enable post-pruning fine-tuning |
+| `--finetune_method` | str | `full` | `full` or `lora` |
 | `--finetune_lr` | float | `1e-5` | Fine-tuning learning rate |
 | `--finetune_epochs` | int | `1` | Number of fine-tuning epochs |
 | `--finetune_samples` | int | `500` | Number of training samples |
 | `--finetune_batch_size` | int | `1` | Batch size (limited by VRAM) |
 | `--finetune_seq_len` | int | `512` | Sequence length for fine-tuning |
+| `--finetune_grad_accum` | int | `4` | Gradient accumulation steps |
+| `--finetune_max_grad_norm` | float | `1.0` | Gradient clipping threshold |
+| `--finetune_weight_decay` | float | `0.01` | Weight decay |
+| `--finetune_warmup_steps` | int | `0` | Learning rate warmup steps |
+
+#### LoRA-Specific Arguments
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--lora_r` | int | `8` | LoRA rank |
+| `--lora_alpha` | int | `16` | LoRA scaling factor |
+| `--lora_dropout` | float | `0.05` | LoRA dropout rate |
+| `--lora_target_attention` | bool | `True` | Apply LoRA to attention layers |
+| `--lora_target_mlp` | bool | `True` | Apply LoRA to MLP layers |
 
 #### Other Flags
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `--save_model` | flag | `False` | Save pruned model checkpoint |
+| `--test_original_ppl` | flag | `False` | Evaluate baseline model PPL |
 | `--test_after_prune` | flag | `False` | Evaluate perplexity after pruning |
-| `--prune_mlp` | flag | `False` | Also prune MLP layers (not just attention) |
+| `--eval_seq_len` | int | `128` | Sequence length for PPL evaluation |
 
 ### Interpreting Logs
 
@@ -735,6 +873,114 @@ config = checkpoint['config']
    # Then run again with --layer_start 16 --layer_end 32
    ```
 
+### Task 6: Use Auto-Search for Optimal Distribution
+
+**Location**: `search_optimal_distribution.py`
+
+**Steps**:
+1. Run coarse-grain search to find approximate optimal:
+   ```bash
+   python search_optimal_distribution.py \
+       --base_model /path/to/model \
+       --pruning_ratio 0.25 \
+       --coarse_step 1 \
+       --output_dir search_results/
+   ```
+
+2. Review results in `search_results/search_report.json`
+
+3. Optionally run fine-grain search around optimal:
+   ```bash
+   python search_optimal_distribution.py \
+       --base_model /path/to/model \
+       --pruning_ratio 0.25 \
+       --coarse_step 1 \
+       --fine_step 0.1 \
+       --output_dir search_results/
+   ```
+
+**Tips**:
+- Use `--early_stopping_threshold 0.5` to stop if PPL degrades too much
+- See `SEARCH_EXAMPLE.md` for detailed usage examples
+
+### Task 7: Use LoRA Fine-tuning
+
+**Location**: Main script with `--finetune_method lora`
+
+**Steps**:
+1. Basic LoRA fine-tuning:
+   ```bash
+   python llama3_unbalanced_pruning_gqa_aware.py \
+       --base_model /path/to/model \
+       --pruning_ratio 0.25 \
+       --finetune \
+       --finetune_method lora \
+       --lora_r 8 \
+       --lora_alpha 16 \
+       --finetune_samples 1000
+   ```
+
+2. Higher capacity LoRA (for more aggressive pruning):
+   ```bash
+   --lora_r 16 \
+   --lora_alpha 32
+   ```
+
+3. Target specific components:
+   ```bash
+   --lora_target_attention True \
+   --lora_target_mlp False  # Only apply to attention
+   ```
+
+**Benefits**:
+- Lower VRAM usage than full fine-tuning
+- Faster training
+- Can target specific module types
+
+### Task 8: Run Comprehensive Evaluation
+
+**Location**: `evaluation/run_evaluation.py`
+
+**Steps**:
+1. Basic perplexity evaluation:
+   ```bash
+   python evaluation/run_evaluation.py \
+       --checkpoint_path prune_log/experiment/pytorch_model.bin \
+       --metrics ppl
+   ```
+
+2. Full evaluation (PPL + Zero-shot + Efficiency):
+   ```bash
+   python evaluation/run_evaluation.py \
+       --checkpoint_path prune_log/experiment/pytorch_model.bin \
+       --metrics ppl,zero_shot,efficiency \
+       --output_dir results/
+   ```
+
+3. Convert checkpoint to HuggingFace format:
+   ```bash
+   python evaluation/convert_checkpoint_to_hf.py \
+       --checkpoint_path prune_log/experiment/pytorch_model.bin \
+       --output_dir hf_model/
+   ```
+
+**Output**: Results saved as JSON report with all metrics
+
+### Task 9: Freeze Important Layers
+
+**Location**: Main script with `--freeze_top_n_layers`
+
+**Steps**:
+1. Freeze the 3 most important layers:
+   ```bash
+   python llama3_unbalanced_pruning_gqa_aware.py \
+       --base_model /path/to/model \
+       --pruning_ratio 0.25 \
+       --freeze_top_n_layers 3
+   ```
+
+**Effect**: The N most important layers (based on layer importance analysis) will not be pruned at all. Pruning rates for other layers will be adjusted to maintain the target overall pruning ratio.
+
 ---
 
 ## Troubleshooting
@@ -932,11 +1178,27 @@ python llama3_unbalanced_pruning_gqa_aware.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name experiment_name \
     --pruning_ratio 0.25 \
-    --prune_mlp \
+    --pruning_distribution 5:5 \
     --save_model \
     --test_after_prune \
     --finetune \
     --finetune_samples 500
+
+# LoRA fine-tuning (lower VRAM)
+python llama3_unbalanced_pruning_gqa_aware.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name experiment_lora \
+    --pruning_ratio 0.25 \
+    --finetune \
+    --finetune_method lora \
+    --lora_r 8 \
+    --lora_alpha 16
+
+# Auto-search for optimal distribution
+python search_optimal_distribution.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --pruning_ratio 0.25 \
+    --output_dir search_results/
 
 # Debug mode (fast)
 python llama3_unbalanced_pruning_gqa_aware.py \
@@ -955,6 +1217,15 @@ python llama3_unbalanced_pruning_gqa_aware.py \
     --layer_importance_config prune_log/previous_run/layer_importance_config.json \
     --pruning_ratio 0.30 \
     --save_model
+
+# Run evaluation suite
+python evaluation/run_evaluation.py \
+    --checkpoint_path prune_log/experiment/pytorch_model.bin \
+    --metrics ppl,zero_shot,efficiency
+
+# Model diagnostics
+python diagnose_model.py \
+    --checkpoint_path prune_log/experiment/pytorch_model.bin
 ```
 
 ### Essential File Locations
@@ -962,11 +1233,17 @@ python llama3_unbalanced_pruning_gqa_aware.py \
 | What | Where |
 |------|-------|
 | Main entry point | `llama3_unbalanced_pruning_gqa_aware.py` |
+| Auto-search script | `search_optimal_distribution.py` |
+| Model diagnostics | `diagnose_model.py` |
 | GQA pruning logic | `LLMPruner/methods/gqa_aware.py` |
 | Layer importance | `LLMPruner/importance/layer_analyzer.py` |
-| Fine-tuning | `LLMPruner/trainer/finetuner.py` |
-| Evaluation | `LLMPruner/evaluator/ppl.py` |
+| Fine-tuning (full + LoRA) | `LLMPruner/trainer/finetuner.py` |
+| Perplexity evaluation | `LLMPruner/evaluator/ppl.py` |
 | Data loading | `LLMPruner/datasets/example_samples.py` |
+| Advanced evaluation suite | `evaluation/run_evaluation.py` |
+| Checkpoint converter | `evaluation/convert_checkpoint_to_hf.py` |
+| Parameter guide | `PARAMETERS_GUIDE.md` |
+| Search examples | `SEARCH_EXAMPLE.md` |
 | Logs | `prune_log/{name}/{timestamp}/training.log` |
 | Checkpoints | `prune_log/{name}/pytorch_model.bin` |
 
@@ -987,14 +1264,29 @@ This document should provide comprehensive guidance for AI assistants working wi
 
 1. **Preserve GQA structure** (4:1 ratio) at all times
 2. **Use layer-wise importance** for intelligent pruning
-3. **Test incrementally** with debug mode
-4. **Monitor logs closely** for validation
-5. **Follow existing conventions** (Chinese comments, snake_case, logger usage)
+3. **Control Attention:MLP distribution** with `--pruning_distribution`
+4. **Use auto-search** to find optimal configurations
+5. **Choose fine-tuning method** (full or LoRA) based on resources
+6. **Test incrementally** with debug mode
+7. **Monitor logs closely** for validation
+8. **Follow existing conventions** (Chinese comments, snake_case, logger usage)
 
 For more details, refer to:
-- `RUN.md` - Comprehensive usage examples
+- `README.md` - Project overview and quick start
+- `PARAMETERS_GUIDE.md` - Detailed parameter selection guide
+- `SEARCH_EXAMPLE.md` - Auto-search usage examples
 - `LLMPruner/README.md` - Module-level documentation
-- Individual module docstrings - Implementation details
+- `evaluation/README.md` - Evaluation suite documentation
+- `evaluation/QUICKSTART.md` - Quick start for evaluation
 
-**Last Updated**: 2025-11-17
-**Version**: 1.0
+### New Features in v2.0
+
+- **Pruning Distribution Control**: `--pruning_distribution` for Attention:MLP ratio
+- **Auto-Search**: `search_optimal_distribution.py` for finding optimal configurations
+- **LoRA Fine-tuning**: `--finetune_method lora` for memory-efficient fine-tuning
+- **Layer Freezing**: `--freeze_top_n_layers` to protect important layers
+- **Advanced Evaluation Suite**: Comprehensive metrics in `evaluation/` module
+- **Model Diagnostics**: `diagnose_model.py` for health checking
+
+**Last Updated**: 2025-11-18
+**Version**: 2.0
