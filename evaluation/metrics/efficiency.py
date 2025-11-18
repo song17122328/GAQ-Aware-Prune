@@ -85,7 +85,7 @@ def evaluate_efficiency(
     results['speed'] = speed_results
 
     # 3. 显存占用
-    if device == 'cuda':
+    if device.startswith('cuda'):
         print(f"\n3. 显存占用:")
         memory_results = measure_memory_usage(model, tokenizer, device=device)
         results['memory'] = memory_results
@@ -138,8 +138,9 @@ def measure_inference_speed(
         padding='max_length'
     )
 
-    if device == 'cuda':
-        inputs = {k: v.cuda() for k, v in inputs.items()}
+    # 移动输入到目标设备（支持cuda和cuda:N格式）
+    if device.startswith('cuda'):
+        inputs = {k: v.to(device) for k, v in inputs.items()}
 
     # Warmup
     print(f"   预热中... ({warmup_steps} steps)")
@@ -152,7 +153,7 @@ def measure_inference_speed(
                 pad_token_id=tokenizer.pad_token_id
             )
 
-    if device == 'cuda':
+    if device.startswith('cuda'):
         torch.cuda.synchronize()
 
     # 正式测速
@@ -169,7 +170,7 @@ def measure_inference_speed(
                 pad_token_id=tokenizer.pad_token_id
             )
 
-    if device == 'cuda':
+    if device.startswith('cuda'):
         torch.cuda.synchronize()
 
     elapsed_time = time.time() - start_time
@@ -208,18 +209,21 @@ def measure_memory_usage(
             'inference_peak_mb': float  # 推理峰值显存
         }
     """
-    if device != 'cuda':
+    if not device.startswith('cuda'):
         return {
             'model_memory_mb': 0,
             'inference_peak_mb': 0
         }
 
+    # 提取GPU编号
+    device_id = int(device.split(':')[1]) if ':' in device else 0
+
     # 清空缓存
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats()
+    torch.cuda.empty_cache(device_id)
+    torch.cuda.reset_peak_memory_stats(device_id)
 
     # 测量模型加载显存
-    model_memory = torch.cuda.memory_allocated() / (1024 ** 2)
+    model_memory = torch.cuda.memory_allocated(device_id) / (1024 ** 2)
 
     # 测量推理峰值显存
     dummy_text = "Test " * input_length
@@ -229,7 +233,7 @@ def measure_memory_usage(
         max_length=input_length,
         truncation=True
     )
-    inputs = {k: v.cuda() for k, v in inputs.items()}
+    inputs = {k: v.to(device) for k, v in inputs.items()}
 
     with torch.no_grad():
         _ = model.generate(
@@ -239,8 +243,8 @@ def measure_memory_usage(
             pad_token_id=tokenizer.pad_token_id
         )
 
-    torch.cuda.synchronize()
-    peak_memory = torch.cuda.max_memory_allocated() / (1024 ** 2)
+    torch.cuda.synchronize(device_id)
+    peak_memory = torch.cuda.max_memory_allocated(device_id) / (1024 ** 2)
 
     return {
         'model_memory_mb': model_memory,
