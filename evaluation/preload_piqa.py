@@ -47,7 +47,7 @@ dataset_kwargs:
 output_type: multiple_choice
 test_split: test
 doc_to_text: "Question: {{{{goal}}}}\\nAnswer:"
-doc_to_target: "{{{{label}}}}"
+doc_to_target: "{{{{label | int}}}}"
 doc_to_choice:
   - "{{{{sol1}}}}"
   - "{{{{sol2}}}}"
