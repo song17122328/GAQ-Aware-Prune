@@ -290,16 +290,20 @@ A: **不需要**。datasets库会自动下载并缓存。只有在遇到网络�
 
 ## 📝 数据集来源汇总
 
-| 数据集 | HuggingFace路径 | 官方来源 |
-|--------|----------------|----------|
-| WikiText-2 | `wikitext` / `wikitext-2-raw-v1` | [Link](https://blog.salesforceairesearch.com/the-wikitext-long-term-dependency-language-modeling-dataset/) |
-| PTB | `ptb_text_only` (已移除) | [LDC](https://catalog.ldc.upenn.edu/LDC99T42) |
-| C4 | `allenai/c4` / `en` | [AllenAI](https://github.com/allenai/allennlp) |
-| HellaSwag | `Rowan/hellaswag` | [Paper](https://arxiv.org/abs/1905.07830) |
-| PIQA | `piqa` | [Paper](https://arxiv.org/abs/1911.11641) |
-| WinoGrande | `winogrande` / `winogrande_xl` | [Paper](https://arxiv.org/abs/1907.10641) |
-| ARC | `ai2_arc` / `ARC-Easy` | [Paper](https://arxiv.org/abs/1803.05457) |
-| BoolQ | `google/boolq` | [Paper](https://arxiv.org/abs/1905.10044) |
+**重要提示**：新版 `datasets` 库（v3.0+）不再支持legacy loading scripts。请使用下表中的**新路径**。
+
+| 数据集 | HuggingFace路径（新） | 旧路径（已废弃） | 官方来源 |
+|--------|---------------------|----------------|----------|
+| WikiText-2 | `wikitext` / `wikitext-2-raw-v1` | - | [Link](https://blog.salesforceairesearch.com/the-wikitext-long-term-dependency-language-modeling-dataset/) |
+| PTB | ❌ 已移除 | `ptb_text_only` | [LDC](https://catalog.ldc.upenn.edu/LDC99T42) |
+| C4 | `allenai/c4` / `en` | `c4` | [AllenAI](https://github.com/allenai/allennlp) |
+| HellaSwag | `Rowan/hellaswag` | `hellaswag` | [Paper](https://arxiv.org/abs/1905.07830) |
+| PIQA | `ybisk/piqa` | `piqa` | [Paper](https://arxiv.org/abs/1911.11641) |
+| WinoGrande | `winogrande` / `winogrande_xl` | - | [Paper](https://arxiv.org/abs/1907.10641) |
+| ARC | `allenai/ai2_arc` / `ARC-Easy` | `ai2_arc` | [Paper](https://arxiv.org/abs/1803.05457) |
+| BoolQ | `google/boolq` | `boolq` | [Paper](https://arxiv.org/abs/1905.10044) |
+
+**错误处理**：如遇到 `RuntimeError: Dataset scripts are no longer supported`，说明使用了旧路径，请参考上表使用新路径。
 
 ---
 
