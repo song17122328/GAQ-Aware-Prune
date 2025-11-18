@@ -116,16 +116,8 @@ def evaluate_zeroshot(
         import os
         use_local_tasks = False
 
-        # 检查本地 PIQA
-        if 'piqa' in tasks:
-            piqa_cache = os.path.expanduser("~/.cache/huggingface/datasets/piqa_local_jsonl")
-            if os.path.exists(piqa_cache):
-                print("检测到本地 PIQA 数据，将使用 piqa_local 任务...")
-                use_local_tasks = True
-                tasks = [t if t != 'piqa' else 'piqa_local' for t in tasks]
-            else:
-                print("警告: 未找到本地 PIQA 数据，将尝试在线下载...")
-                print("如遇问题，请先运行: python evaluation/preload_piqa.py")
+        # PIQA: 使用官方 HuggingFace 版本（本地版本存在问题）
+        # 如果需要使用本地版本，可以手动将 'piqa' 替换为 'piqa_local'
 
         # 检查本地 ARC (检查 JSONL 文件)
         arc_easy_jsonl = os.path.expanduser("~/.cache/huggingface/datasets/arc_local/arc_easy_test.jsonl")
