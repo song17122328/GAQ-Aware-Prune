@@ -82,9 +82,17 @@ def load_model_and_tokenizer(
         )
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
-    # 设置padding token
+    # 设置padding token和padding方向
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+    # Decoder-only模型（如LLaMA）必须使用left padding
+    # 原因：生成时需要从右边开始，左边是padding不参与计算
+    if hasattr(model.config, 'is_decoder') and model.config.is_decoder:
+        tokenizer.padding_side = 'left'
+    else:
+        # 保险起见，对于Causal LM也设为left
+        tokenizer.padding_side = 'left'
 
     # 移动到设备（仅当没有使用device_map时）
     if not load_in_8bit and device == 'cuda' and force_single_device:
