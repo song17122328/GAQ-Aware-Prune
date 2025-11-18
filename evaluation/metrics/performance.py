@@ -114,9 +114,9 @@ def evaluate_zeroshot(
         # 检查是否需要使用本地 PIQA
         use_local_piqa = False
         if 'piqa' in tasks:
-            # 检查本地 PIQA 数据是否存在
+            # 检查本地 PIQA 数据是否存在（从 GitHub 下载的位置）
             import os
-            piqa_cache = os.path.expanduser("~/.cache/huggingface/hub/datasets--ybisk--piqa")
+            piqa_cache = os.path.expanduser("~/.cache/huggingface/datasets/piqa_local_jsonl")
             if os.path.exists(piqa_cache):
                 print("检测到本地 PIQA 数据，将使用 piqa_local 任务...")
                 use_local_piqa = True
@@ -124,6 +124,7 @@ def evaluate_zeroshot(
                 tasks = [t if t != 'piqa' else 'piqa_local' for t in tasks]
             else:
                 print("警告: 未找到本地 PIQA 数据，将尝试在线下载...")
+                print("如遇问题，请先运行: python evaluation/preload_piqa.py")
 
         # 获取自定义任务目录
         tasks_dir = os.path.join(os.path.dirname(__file__), '..', 'tasks')
