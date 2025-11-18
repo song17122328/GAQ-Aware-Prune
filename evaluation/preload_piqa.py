@@ -89,6 +89,24 @@ def add_labels_from_url(dataset_split, url):
     return dataset_split.add_column("label", labels)
 
 
+def download_file(url, local_path):
+    """
+    下载文件到本地（支持代理）
+
+    Args:
+        url: 远程文件 URL
+        local_path: 本地保存路径
+    """
+    print(f"  下载: {url.split('/')[-1]}")
+    response = requests.get(url, timeout=60)
+    response.raise_for_status()
+
+    with open(local_path, 'wb') as f:
+        f.write(response.content)
+
+    return local_path
+
+
 def preload_piqa():
     """
     从 GitHub 下载 PIQA 数据集并保存到本地
@@ -98,34 +116,51 @@ def preload_piqa():
     print("=" * 60)
 
     try:
-        # 1. 从 GitHub 加载 JSONL 数据
+        # 创建本地下载目录
+        local_data_dir = os.path.expanduser("~/.cache/huggingface/datasets/piqa_local_jsonl")
+        os.makedirs(local_data_dir, exist_ok=True)
+
+        # 1. 先用 requests 下载文件到本地（支持代理）
         print("\n[1/4] 从 GitHub 下载数据...")
-        print(f"  训练集: {PIQA_URLS['train_data'].split('/')[-1]}")
-        print(f"  验证集: {PIQA_URLS['validation_data'].split('/')[-1]}")
+
+        local_train = os.path.join(local_data_dir, "train.jsonl")
+        local_valid = os.path.join(local_data_dir, "valid.jsonl")
+        local_train_labels = os.path.join(local_data_dir, "train-labels.lst")
+        local_valid_labels = os.path.join(local_data_dir, "valid-labels.lst")
+
+        download_file(PIQA_URLS['train_data'], local_train)
+        download_file(PIQA_URLS['validation_data'], local_valid)
+        download_file(PIQA_URLS['train_labels'], local_train_labels)
+        download_file(PIQA_URLS['validation_labels'], local_valid_labels)
+
+        print("✓ 文件下载完成")
+
+        # 2. 从本地文件加载数据集
+        print("\n[2/4] 从本地文件加载数据集...")
 
         dataset = load_dataset('json', data_files={
-            'train': PIQA_URLS['train_data'],
-            'validation': PIQA_URLS['validation_data']
+            'train': local_train,
+            'validation': local_valid
         })
 
         print(f"✓ JSONL 数据加载成功")
         print(f"  训练集: {len(dataset['train'])} 样本")
         print(f"  验证集: {len(dataset['validation'])} 样本")
 
-        # 2. 下载并合并标签
-        print("\n[2/4] 下载并合并标签...")
-        dataset['train'] = add_labels_from_url(
-            dataset['train'],
-            PIQA_URLS['train_labels']
-        )
-        dataset['validation'] = add_labels_from_url(
-            dataset['validation'],
-            PIQA_URLS['validation_labels']
-        )
+        # 3. 加载标签并合并
+        print("\n[3/4] 合并标签...")
+
+        with open(local_train_labels) as f:
+            train_labels = [int(line.strip()) for line in f.readlines()]
+        with open(local_valid_labels) as f:
+            valid_labels = [int(line.strip()) for line in f.readlines()]
+
+        dataset['train'] = dataset['train'].add_column("label", train_labels)
+        dataset['validation'] = dataset['validation'].add_column("label", valid_labels)
         print("✓ 标签合并完成")
 
-        # 3. 验证数据
-        print("\n[3/4] 验证数据...")
+        # 4. 验证数据并保存
+        print("\n[4/4] 验证数据并保存...")
         sample = dataset['validation'][0]
         print(f"  样本字段: {list(sample.keys())}")
         print(f"  goal: {sample['goal'][:50]}...")
@@ -134,18 +169,12 @@ def preload_piqa():
         print(f"  label: {sample['label']}")
         print("✓ 数据验证通过")
 
-        # 4. 保存到本地
-        print("\n[4/4] 保存数据到本地...")
-
         # 保存为 HF 格式
         save_dir = os.path.expanduser("~/.cache/huggingface/datasets/piqa_local")
         dataset.save_to_disk(save_dir)
         print(f"✓ HF 格式已保存: {save_dir}")
 
         # 创建包含标签的 jsonl 文件供 lm-eval 使用
-        local_data_dir = os.path.expanduser("~/.cache/huggingface/datasets/piqa_local_jsonl")
-        os.makedirs(local_data_dir, exist_ok=True)
-
         valid_jsonl_path = os.path.join(local_data_dir, "valid_with_labels.jsonl")
         with open(valid_jsonl_path, 'w') as f:
             for item in dataset['validation']:
