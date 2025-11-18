@@ -247,11 +247,18 @@ if __name__ == "__main__":
 
     # 使用一个小模型进行测试
     print(f"\n加载测试模型 (Llama-3-8B-Instruct)...")
-    model_name = "/newdata/LLMs/Llama-3-8B-Instruct"
-    model = AutoModelForCausalLM.from_pretrained(model_name)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # model_name = "/newdata/LLMs/Llama-3-8B-Instruct"
+    # model = AutoModelForCausalLM.from_pretrained(model_name)
+    # tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    print("\n计算 wikitext2 PPL...")
+
+    best_checkpoint_path = "/data/home/yuanxiaosong/GAQ-Aware-Prune/prune_log/ppl_search_20251118_005448_ratio_1.0_9.0_freeze_0/pytorch_model.bin"
+    checkpoint = torch.load(best_checkpoint_path, weights_only=False)
+    model = checkpoint['model']
+    tokenizer = checkpoint['tokenizer']
+    print("✅ 从检查点重新加载成功")
+
+    print("\n计算 wikitext2 PPL...,默认使用的seq_len是128")
     try:
         ppl_metric = PPLMetric(
             model,
