@@ -127,20 +127,26 @@ def evaluate_zeroshot(
                 print("警告: 未找到本地 PIQA 数据，将尝试在线下载...")
                 print("如遇问题，请先运行: python evaluation/preload_piqa.py")
 
-        # 检查本地 ARC
-        arc_cache = os.path.expanduser("~/.cache/huggingface/datasets/arc_local")
-        if os.path.exists(arc_cache):
-            if 'arc_easy' in tasks:
+        # 检查本地 ARC (检查 JSONL 文件)
+        arc_easy_jsonl = os.path.expanduser("~/.cache/huggingface/datasets/arc_local/arc_easy_test.jsonl")
+        arc_challenge_jsonl = os.path.expanduser("~/.cache/huggingface/datasets/arc_local/arc_challenge_test.jsonl")
+
+        if 'arc_easy' in tasks:
+            if os.path.exists(arc_easy_jsonl):
                 print("检测到本地 ARC-Easy 数据，将使用 arc_easy_local 任务...")
                 use_local_tasks = True
                 tasks = [t if t != 'arc_easy' else 'arc_easy_local' for t in tasks]
-            if 'arc_challenge' in tasks:
+            else:
+                print("警告: 未找到本地 ARC-Easy 数据，将尝试在线下载...")
+                print("如遇问题，请先运行: python evaluation/preload_arc.py")
+
+        if 'arc_challenge' in tasks:
+            if os.path.exists(arc_challenge_jsonl):
                 print("检测到本地 ARC-Challenge 数据，将使用 arc_challenge_local 任务...")
                 use_local_tasks = True
                 tasks = [t if t != 'arc_challenge' else 'arc_challenge_local' for t in tasks]
-        else:
-            if 'arc_easy' in tasks or 'arc_challenge' in tasks:
-                print("警告: 未找到本地 ARC 数据，将尝试在线下载...")
+            else:
+                print("警告: 未找到本地 ARC-Challenge 数据，将尝试在线下载...")
                 print("如遇问题，请先运行: python evaluation/preload_arc.py")
 
         # 获取自定义任务目录

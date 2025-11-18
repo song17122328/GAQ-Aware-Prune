@@ -19,6 +19,70 @@ from datasets import Dataset, DatasetDict
 ARC_DOWNLOAD_URL = "https://s3-us-west-2.amazonaws.com/ai2-website/data/ARC-V1-Feb2018.zip"
 
 
+def generate_arc_lm_eval_tasks(arc_easy_jsonl, arc_challenge_jsonl):
+    """
+    生成 lm-eval 的自定义 ARC 任务 YAML 文件
+
+    Args:
+        arc_easy_jsonl: ARC-Easy 测试集 JSONL 文件路径
+        arc_challenge_jsonl: ARC-Challenge 测试集 JSONL 文件路径
+    """
+    # 获取任务目录
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    tasks_dir = os.path.join(script_dir, 'tasks')
+    os.makedirs(tasks_dir, exist_ok=True)
+
+    # ARC-Easy 任务
+    arc_easy_yaml = f"""task: arc_easy_local
+dataset_path: json
+dataset_kwargs:
+  data_files:
+    test: {arc_easy_jsonl}
+output_type: multiple_choice
+test_split: test
+doc_to_text: "Question: {{{{question}}}}\\nAnswer:"
+doc_to_target: answerKey
+doc_to_choice: "{{{{choices.text}}}}"
+metric_list:
+  - metric: acc
+    aggregation: mean
+    higher_is_better: true
+  - metric: acc_norm
+    aggregation: mean
+    higher_is_better: true
+"""
+
+    arc_easy_path = os.path.join(tasks_dir, 'arc_easy_local.yaml')
+    with open(arc_easy_path, 'w') as f:
+        f.write(arc_easy_yaml)
+    print(f"✓ 已生成 ARC-Easy 任务文件: {arc_easy_path}")
+
+    # ARC-Challenge 任务
+    arc_challenge_yaml = f"""task: arc_challenge_local
+dataset_path: json
+dataset_kwargs:
+  data_files:
+    test: {arc_challenge_jsonl}
+output_type: multiple_choice
+test_split: test
+doc_to_text: "Question: {{{{question}}}}\\nAnswer:"
+doc_to_target: answerKey
+doc_to_choice: "{{{{choices.text}}}}"
+metric_list:
+  - metric: acc
+    aggregation: mean
+    higher_is_better: true
+  - metric: acc_norm
+    aggregation: mean
+    higher_is_better: true
+"""
+
+    arc_challenge_path = os.path.join(tasks_dir, 'arc_challenge_local.yaml')
+    with open(arc_challenge_path, 'w') as f:
+        f.write(arc_challenge_yaml)
+    print(f"✓ 已生成 ARC-Challenge 任务文件: {arc_challenge_path}")
+
+
 def download_file(url, local_path):
     """
     下载文件到本地（支持代理，带进度显示）
@@ -163,18 +227,34 @@ def preload_arc():
 
         print("✓ 数据转换完成")
 
-        # 4. 保存数据集
+        # 4. 保存数据集为 JSONL 格式（供 lm-eval 使用）
         print("\n[4/4] 保存数据集...")
 
-        # 保存 ARC-Easy
-        arc_easy_save_dir = os.path.join(local_data_dir, "arc_easy")
-        arc_easy_dataset.save_to_disk(arc_easy_save_dir)
-        print(f"✓ ARC-Easy 已保存: {arc_easy_save_dir}")
+        # 保存为 JSONL 格式
+        def save_as_jsonl(dataset, file_path):
+            with open(file_path, 'w') as f:
+                for item in dataset:
+                    # 转换 choices 格式以便 lm-eval 使用
+                    row = {
+                        'id': item['id'],
+                        'question': item['question'],
+                        'choices': item['choices'],
+                        'answerKey': item['answerKey']
+                    }
+                    f.write(json.dumps(row) + '\n')
 
-        # 保存 ARC-Challenge
-        arc_challenge_save_dir = os.path.join(local_data_dir, "arc_challenge")
-        arc_challenge_dataset.save_to_disk(arc_challenge_save_dir)
-        print(f"✓ ARC-Challenge 已保存: {arc_challenge_save_dir}")
+        # ARC-Easy JSONL
+        arc_easy_test_jsonl = os.path.join(local_data_dir, "arc_easy_test.jsonl")
+        save_as_jsonl(arc_easy_dataset['test'], arc_easy_test_jsonl)
+        print(f"✓ ARC-Easy Test JSONL: {arc_easy_test_jsonl}")
+
+        # ARC-Challenge JSONL
+        arc_challenge_test_jsonl = os.path.join(local_data_dir, "arc_challenge_test.jsonl")
+        save_as_jsonl(arc_challenge_dataset['test'], arc_challenge_test_jsonl)
+        print(f"✓ ARC-Challenge Test JSONL: {arc_challenge_test_jsonl}")
+
+        # 生成 lm-eval 任务文件
+        generate_arc_lm_eval_tasks(arc_easy_test_jsonl, arc_challenge_test_jsonl)
 
         # 验证样本
         print(f"\n样本示例 (ARC-Challenge):")
@@ -188,7 +268,6 @@ def preload_arc():
         print("✓ ARC 预加载完成!")
         print("=" * 60)
         print("\nARC 数据集现在可用于 zero-shot 评估")
-        print("注意: lm-eval 可能仍需要在线下载，这只是备份方案")
 
         return True
 
