@@ -112,20 +112,36 @@ def evaluate_zeroshot(
         from lm_eval.models.huggingface import HFLM
         from lm_eval.tasks import TaskManager
 
-        # 检查是否需要使用本地 PIQA
-        use_local_piqa = False
+        # 检查是否需要使用本地数据集
+        import os
+        use_local_tasks = False
+
+        # 检查本地 PIQA
         if 'piqa' in tasks:
-            # 检查本地 PIQA 数据是否存在（从 GitHub 下载的位置）
-            import os
             piqa_cache = os.path.expanduser("~/.cache/huggingface/datasets/piqa_local_jsonl")
             if os.path.exists(piqa_cache):
                 print("检测到本地 PIQA 数据，将使用 piqa_local 任务...")
-                use_local_piqa = True
-                # 替换 piqa 为 piqa_local
+                use_local_tasks = True
                 tasks = [t if t != 'piqa' else 'piqa_local' for t in tasks]
             else:
                 print("警告: 未找到本地 PIQA 数据，将尝试在线下载...")
                 print("如遇问题，请先运行: python evaluation/preload_piqa.py")
+
+        # 检查本地 ARC
+        arc_cache = os.path.expanduser("~/.cache/huggingface/datasets/arc_local")
+        if os.path.exists(arc_cache):
+            if 'arc_easy' in tasks:
+                print("检测到本地 ARC-Easy 数据，将使用 arc_easy_local 任务...")
+                use_local_tasks = True
+                tasks = [t if t != 'arc_easy' else 'arc_easy_local' for t in tasks]
+            if 'arc_challenge' in tasks:
+                print("检测到本地 ARC-Challenge 数据，将使用 arc_challenge_local 任务...")
+                use_local_tasks = True
+                tasks = [t if t != 'arc_challenge' else 'arc_challenge_local' for t in tasks]
+        else:
+            if 'arc_easy' in tasks or 'arc_challenge' in tasks:
+                print("警告: 未找到本地 ARC 数据，将尝试在线下载...")
+                print("如遇问题，请先运行: python evaluation/preload_arc.py")
 
         # 获取自定义任务目录
         tasks_dir = os.path.join(os.path.dirname(__file__), '..', 'tasks')
@@ -159,7 +175,7 @@ def evaluate_zeroshot(
                 "log_samples": False
             }
             # 如果使用本地 PIQA，添加自定义任务目录
-            if use_local_piqa and os.path.exists(tasks_dir):
+            if use_local_tasks and os.path.exists(tasks_dir):
                 eval_kwargs["task_manager"] = TaskManager(include_path=tasks_dir)
 
             results = lm_eval.simple_evaluate(**eval_kwargs)
@@ -173,7 +189,7 @@ def evaluate_zeroshot(
                 "log_samples": False
             }
             # 如果使用本地 PIQA，添加自定义任务目录
-            if use_local_piqa and os.path.exists(tasks_dir):
+            if use_local_tasks and os.path.exists(tasks_dir):
                 eval_kwargs["task_manager"] = TaskManager(include_path=tasks_dir)
 
             results = lm_eval.simple_evaluate(**eval_kwargs)
@@ -193,8 +209,13 @@ def evaluate_zeroshot(
                     elif 'acc' in key and acc is None:
                         acc = value
 
-                # 将 piqa_local 映射回 piqa
-                result_task_name = 'piqa' if task == 'piqa_local' else task
+                # 将本地任务名称映射回原始名称
+                task_name_map = {
+                    'piqa_local': 'piqa',
+                    'arc_easy_local': 'arc_easy',
+                    'arc_challenge_local': 'arc_challenge'
+                }
+                result_task_name = task_name_map.get(task, task)
 
                 summary[result_task_name] = {
                     'accuracy': acc,
