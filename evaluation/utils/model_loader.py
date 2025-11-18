@@ -19,7 +19,8 @@ def load_model_and_tokenizer(
     model_path: str,
     device: str = 'cuda',
     load_in_8bit: bool = False,
-    torch_dtype: Optional[torch.dtype] = torch.float16
+    torch_dtype: Optional[torch.dtype] = torch.float16,
+    force_single_device: bool = True
 ) -> Tuple[AutoModelForCausalLM, AutoTokenizer]:
     """
     加载模型和tokenizer
@@ -31,6 +32,7 @@ def load_model_and_tokenizer(
         device: 设备 (cuda/cpu)
         load_in_8bit: 是否使用8bit量化加载
         torch_dtype: 数据类型
+        force_single_device: 是否强制使用单个设备（避免multi-GPU问题）
 
     Returns:
         (model, tokenizer)
@@ -61,11 +63,21 @@ def load_model_and_tokenizer(
 
     else:
         # HuggingFace模型目录
+        # 决定device_map策略
+        if force_single_device:
+            # 强制单设备：避免PPL计算时的multi-GPU问题
+            device_map = None
+            print(f"  使用单设备模式: {device}")
+        else:
+            # 自动分布：适合生成任务
+            device_map = 'auto' if device == 'cuda' else None
+            print(f"  使用自动设备分布模式")
+
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch_dtype,
             load_in_8bit=load_in_8bit,
-            device_map='auto' if device == 'cuda' else None,
+            device_map=device_map,
             trust_remote_code=True
         )
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
@@ -74,8 +86,9 @@ def load_model_and_tokenizer(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # 移动到设备
-    if not load_in_8bit and device == 'cuda':
+    # 移动到设备（仅当没有使用device_map时）
+    if not load_in_8bit and device == 'cuda' and force_single_device:
+        print(f"  移动模型到 {device}...")
         model = model.to(device)
 
     model.eval()
