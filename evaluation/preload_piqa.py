@@ -38,8 +38,7 @@ def generate_lm_eval_task(valid_file):
     yaml_path = os.path.join(tasks_dir, 'piqa_local.yaml')
 
     # 生成 YAML 内容（使用绝对路径）
-    yaml_content = f"""group: piqa_local
-task: piqa_local
+    yaml_content = f"""task: piqa_local
 dataset_path: json
 dataset_kwargs:
   data_files:

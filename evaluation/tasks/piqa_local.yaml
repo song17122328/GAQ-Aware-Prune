@@ -1,4 +1,3 @@
-group: piqa_local
 task: piqa_local
 dataset_path: json
 dataset_kwargs:
