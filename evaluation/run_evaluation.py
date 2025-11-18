@@ -110,32 +110,24 @@ def evaluate_single_model(
 
     # 2. Zero-shot评估
     if 'zeroshot' in metrics:
-        # Zero-shot需要HF格式模型，不能直接用checkpoint
-        if model_path.endswith('.bin'):
-            print("\n⚠️  Zero-shot评估需要HF格式模型")
-            print("请先将checkpoint转换为HF格式，或使用--save_model保存完整模型")
-            results['metrics']['zeroshot'] = None
-        else:
-            zeroshot_results = evaluate_zeroshot(
-                model_path,
-                tasks=zeroshot_tasks,
-                device=device
-            )
-            results['metrics']['zeroshot'] = zeroshot_results
+        # evaluate_zeroshot 支持 HF格式和 .bin checkpoint
+        zeroshot_results = evaluate_zeroshot(
+            model_path,
+            tasks=zeroshot_tasks,
+            device=device
+        )
+        results['metrics']['zeroshot'] = zeroshot_results
 
-            if zeroshot_results:
-                avg_acc = compute_average_accuracy(zeroshot_results)
-                results['metrics']['avg_zeroshot_acc'] = avg_acc
-                print(f"\n平均Zero-shot准确率: {avg_acc*100:.2f}%")
+        if zeroshot_results:
+            avg_acc = compute_average_accuracy(zeroshot_results)
+            results['metrics']['avg_zeroshot_acc'] = avg_acc
+            print(f"\n平均Zero-shot准确率: {avg_acc*100:.2f}%")
 
     # 3. Few-shot评估（可选）
     if 'fewshot' in metrics:
-        if model_path.endswith('.bin'):
-            print("\n⚠️  Few-shot评估需要HF格式模型")
-            results['metrics']['fewshot'] = None
-        else:
-            fewshot_results = evaluate_fewshot(model_path, device=device)
-            results['metrics']['fewshot'] = fewshot_results
+        # evaluate_fewshot 支持 HF格式和 .bin checkpoint
+        fewshot_results = evaluate_fewshot(model_path, device=device)
+        results['metrics']['fewshot'] = fewshot_results
 
     # 4. 效率评估（速度+内存）
     if any(m in metrics for m in ['speed', 'memory', 'efficiency']):
