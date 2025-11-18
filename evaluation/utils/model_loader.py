@@ -61,6 +61,11 @@ def load_model_and_tokenizer(
             # 只保存了state_dict的格式
             raise ValueError(f"不支持的checkpoint格式。请确保保存时包含完整的model对象。")
 
+        # Checkpoint加载后移动到GPU
+        if device.startswith('cuda') and force_single_device:
+            print(f"  移动checkpoint模型到 {device}...")
+            model = model.to(device)
+
     else:
         # HuggingFace模型目录
         # 决定device_map策略
@@ -94,9 +99,10 @@ def load_model_and_tokenizer(
         # 保险起见，对于Causal LM也设为left
         tokenizer.padding_side = 'left'
 
-    # 移动到设备（仅当没有使用device_map时）
-    if not load_in_8bit and device == 'cuda' and force_single_device:
-        print(f"  移动模型到 {device}...")
+    # 移动到设备（仅当没有使用device_map且是HF模型时）
+    # 注意：checkpoint已经在上面移动过了
+    if not load_in_8bit and device.startswith('cuda') and force_single_device and not model_path.endswith('.bin'):
+        print(f"  移动HF模型到 {device}...")
         model = model.to(device)
 
     model.eval()
