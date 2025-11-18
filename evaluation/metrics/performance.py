@@ -79,7 +79,7 @@ def evaluate_zeroshot(
 
     Args:
         model_path: 模型路径（支持HF目录或.bin checkpoint）
-        tasks: 任务列表，默认为常用的5个任务
+        tasks: 任务列表，默认为常用的7个任务
         batch_size: 批次大小
         device: 设备
 
@@ -93,11 +93,13 @@ def evaluate_zeroshot(
     """
     if tasks is None:
         tasks = [
-            'hellaswag',      # 常识推理
+            'boolq',          # 是非问答
             'piqa',           # 物理常识
+            'hellaswag',      # 常识推理
             'winogrande',     # 代词消歧
             'arc_easy',       # 科学问答（简单）
-            'boolq'           # 是非问答
+            'arc_challenge',  # 科学问答（困难）
+            'openbookqa'      # 科学推理
         ]
 
     print(f"\n{'='*60}")
