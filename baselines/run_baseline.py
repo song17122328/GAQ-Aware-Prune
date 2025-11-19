@@ -93,11 +93,11 @@ def main():
     if args.save_ckpt_log_name is None:
         args.save_ckpt_log_name = f"{args.method}_{int(args.pruning_ratio*100)}pct"
 
-    # 初始化日志
+    # 初始化日志 (保存到 prune_log/baselines/ 目录)
     logger = LoggerWithDepth(
         env_name=args.save_ckpt_log_name,
         config=args.__dict__,
-        root_dir='prune_log',
+        root_dir='prune_log/baselines',
         setup_sublogger=True
     )
 
@@ -177,7 +177,7 @@ def main():
     # 保存模型
     if args.save_model:
         save_path = os.path.join(
-            'prune_log',
+            'prune_log/baselines',
             args.save_ckpt_log_name,
             'pytorch_model.bin'
         )
