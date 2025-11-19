@@ -57,7 +57,8 @@ def evaluate_single_model(
     zeroshot_tasks: List[str] = None,
     speed_samples: int = 50,
     verbose: bool = True,
-    use_custom_zeroshot: bool = True
+    use_custom_zeroshot: bool = True,
+    zeroshot_batch_size: int = 8
 ) -> Dict:
     """
     评估单个模型
@@ -71,6 +72,7 @@ def evaluate_single_model(
         speed_samples: 速度测试样本数
         verbose: 是否打印详细信息
         use_custom_zeroshot: 是否使用自定义 zeroshot 评估器（不依赖 lm-eval）
+        zeroshot_batch_size: Zero-shot 批处理大小（默认8，仅对自定义评估器有效）
 
     Returns:
         评估结果字典
@@ -136,7 +138,8 @@ def evaluate_single_model(
             zeroshot_results = evaluate_zeroshot_custom(
                 model, tokenizer,
                 tasks=tasks,
-                device=device
+                device=device,
+                batch_size=zeroshot_batch_size
             )
         else:
             # 使用 lm-eval（可能有网络问题）
@@ -332,6 +335,8 @@ def main():
                        help='Zero-shot任务（逗号分隔）')
     parser.add_argument('--speed_samples', type=int, default=50,
                        help='速度测试样本数')
+    parser.add_argument('--zeroshot_batch_size', type=int, default=8,
+                       help='Zero-shot 批处理大小（默认8，仅对自定义评估器有效）')
     parser.add_argument('--use_lm_eval', action='store_true',
                        help='使用 lm-eval 库进行 zero-shot 评估（默认使用自定义评估器）')
 
@@ -372,7 +377,8 @@ def main():
         ppl_datasets=args.ppl_datasets.split(',') if args.ppl_datasets else None,
         zeroshot_tasks=args.zeroshot_tasks.split(',') if args.zeroshot_tasks else None,
         speed_samples=args.speed_samples,
-        use_custom_zeroshot=not args.use_lm_eval
+        use_custom_zeroshot=not args.use_lm_eval,
+        zeroshot_batch_size=args.zeroshot_batch_size
     )
 
     # 保存结果

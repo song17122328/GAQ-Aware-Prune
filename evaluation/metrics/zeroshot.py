@@ -20,6 +20,7 @@ import torch
 import torch.nn.functional as F
 from typing import Dict, List, Tuple, Optional
 from tqdm import tqdm
+import gc
 
 
 def get_project_root():
@@ -91,6 +92,172 @@ def compute_loglikelihood(
         log_likelihood += log_probs[token_id].item()
 
     return log_likelihood
+
+
+def compute_loglikelihood_batched(
+    model,
+    tokenizer,
+    contexts: List[str],
+    continuations: List[str],
+    device: str
+) -> List[float]:
+    """
+    批量计算多个 (context, continuation) 对的 log-likelihood
+
+    Args:
+        model: 语言模型
+        tokenizer: tokenizer
+        contexts: 上下文列表
+        continuations: 续写文本列表
+        device: 设备
+
+    Returns:
+        log-likelihood 值列表
+    """
+    if len(contexts) != len(continuations):
+        raise ValueError("contexts 和 continuations 长度必须相同")
+
+    batch_size = len(contexts)
+    if batch_size == 0:
+        return []
+
+    # 编码所有样本
+    all_context_ids = []
+    all_full_ids = []
+    all_continuation_lengths = []
+
+    for context, continuation in zip(contexts, continuations):
+        context_ids = tokenizer.encode(context, add_special_tokens=False)
+        full_text = context + continuation
+        full_ids = tokenizer.encode(full_text, add_special_tokens=False)
+        continuation_ids = full_ids[len(context_ids):]
+
+        all_context_ids.append(context_ids)
+        all_full_ids.append(full_ids)
+        all_continuation_lengths.append(len(continuation_ids))
+
+    # 找到最大长度并填充
+    max_len = max(len(ids) for ids in all_full_ids)
+
+    # 创建填充后的张量
+    padded_input_ids = torch.full((batch_size, max_len), tokenizer.pad_token_id or 0, dtype=torch.long, device=device)
+    attention_mask = torch.zeros((batch_size, max_len), dtype=torch.long, device=device)
+
+    for i, full_ids in enumerate(all_full_ids):
+        seq_len = len(full_ids)
+        padded_input_ids[i, :seq_len] = torch.tensor(full_ids, dtype=torch.long)
+        attention_mask[i, :seq_len] = 1
+
+    # 批量前向传播
+    with torch.no_grad():
+        outputs = model(input_ids=padded_input_ids, attention_mask=attention_mask)
+        logits = outputs.logits
+
+    # 计算每个样本的 log-likelihood
+    log_likelihoods = []
+
+    for i in range(batch_size):
+        context_len = len(all_context_ids[i])
+        full_len = len(all_full_ids[i])
+        continuation_len = all_continuation_lengths[i]
+
+        if continuation_len == 0:
+            log_likelihoods.append(float('-inf'))
+            continue
+
+        # 计算续写部分的 log-likelihood
+        start_pos = context_len - 1
+        log_likelihood = 0.0
+
+        for j in range(continuation_len):
+            pos = start_pos + j
+            if pos >= full_len:
+                break
+
+            token_id = all_full_ids[i][pos + 1] if pos + 1 < full_len else 0
+            token_logits = logits[i, pos, :]
+            log_probs = F.log_softmax(token_logits, dim=-1)
+            log_likelihood += log_probs[token_id].item()
+
+        log_likelihoods.append(log_likelihood)
+
+    return log_likelihoods
+
+
+def evaluate_multiple_choice_batched(
+    model,
+    tokenizer,
+    questions: List[dict],
+    format_fn,
+    device: str,
+    task_name: str = "",
+    batch_size: int = 8
+) -> Tuple[float, int, int]:
+    """
+    批量评估多选题任务（更快）
+
+    Args:
+        model: 语言模型
+        tokenizer: tokenizer
+        questions: 问题列表
+        format_fn: 格式化函数，返回 (context, choices, label)
+        device: 设备
+        task_name: 任务名称（用于显示）
+        batch_size: 批次大小
+
+    Returns:
+        (accuracy, correct_count, total_count)
+    """
+    model.eval()
+    correct = 0
+    total = 0
+
+    desc = f"评估 {task_name}" if task_name else "评估中"
+
+    # 预处理所有问题
+    all_items = []
+    for item in questions:
+        context, choices, label = format_fn(item)
+        all_items.append((context, choices, label))
+
+    # 按批次处理
+    for batch_start in tqdm(range(0, len(all_items), batch_size), desc=desc):
+        batch_items = all_items[batch_start:batch_start + batch_size]
+
+        # 收集这个批次中所有的 (context, continuation) 对
+        batch_contexts = []
+        batch_continuations = []
+        batch_indices = []  # (item_idx, choice_idx)
+
+        for item_idx, (context, choices, label) in enumerate(batch_items):
+            for choice_idx, choice in enumerate(choices):
+                batch_contexts.append(context)
+                batch_continuations.append(choice)
+                batch_indices.append((item_idx, choice_idx))
+
+        # 批量计算 log-likelihood
+        log_likelihoods = compute_loglikelihood_batched(
+            model, tokenizer, batch_contexts, batch_continuations, device
+        )
+
+        # 整理结果并判断
+        item_scores = {}  # item_idx -> [scores for each choice]
+        for (item_idx, choice_idx), ll in zip(batch_indices, log_likelihoods):
+            if item_idx not in item_scores:
+                item_scores[item_idx] = []
+            item_scores[item_idx].append(ll)
+
+        # 计算准确率
+        for item_idx, (context, choices, label) in enumerate(batch_items):
+            scores = item_scores[item_idx]
+            pred = scores.index(max(scores))
+
+            if pred == label:
+                correct += 1
+            total += 1
+
+    accuracy = correct / total if total > 0 else 0
+    return accuracy, correct, total
 
 
 def evaluate_multiple_choice(
@@ -235,7 +402,9 @@ def evaluate_zeroshot_custom(
     tokenizer,
     tasks: List[str] = None,
     device: str = 'cuda',
-    data_dir: str = None
+    data_dir: str = None,
+    batch_size: int = 8,
+    use_batched: bool = True
 ) -> Dict[str, Dict]:
     """
     自定义 Zero-shot 评估（不使用 lm-eval）
@@ -246,6 +415,8 @@ def evaluate_zeroshot_custom(
         tasks: 任务列表，默认所有任务
         device: 设备
         data_dir: 数据目录，默认 data/zeroshot
+        batch_size: 批次大小（仅在 use_batched=True 时有效）
+        use_batched: 是否使用批处理（更快，默认True）
 
     Returns:
         {task_name: {'accuracy': float, 'correct': int, 'total': int}}
@@ -261,7 +432,12 @@ def evaluate_zeroshot_custom(
     print(f"自定义 Zero-shot 评估")
     print(f"{'='*60}")
     print(f"任务: {', '.join(tasks)}")
-    print(f"数据目录: {data_dir}\n")
+    print(f"数据目录: {data_dir}")
+    if use_batched:
+        print(f"批处理模式: batch_size={batch_size}")
+    else:
+        print(f"单样本模式")
+    print()
 
     results = {}
 
@@ -281,13 +457,27 @@ def evaluate_zeroshot_custom(
         questions = load_jsonl(file_path)
         print(f"\n{task}: 加载 {len(questions)} 个样本")
 
-        # 评估
-        accuracy, correct, total = evaluate_multiple_choice(
-            model, tokenizer, questions,
-            config['format_fn'],
-            device,
-            task_name=task
-        )
+        # 评估（选择批处理或单样本模式）
+        if use_batched:
+            accuracy, correct, total = evaluate_multiple_choice_batched(
+                model, tokenizer, questions,
+                config['format_fn'],
+                device,
+                task_name=task,
+                batch_size=batch_size
+            )
+        else:
+            accuracy, correct, total = evaluate_multiple_choice(
+                model, tokenizer, questions,
+                config['format_fn'],
+                device,
+                task_name=task
+            )
+
+        # 每个任务后清理显存
+        gc.collect()
+        if device.startswith('cuda'):
+            torch.cuda.empty_cache()
 
         results[task] = {
             'accuracy': accuracy,
@@ -319,6 +509,10 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--data_dir', type=str, default=None,
                        help='数据目录，默认 data/zeroshot')
+    parser.add_argument('--batch_size', type=int, default=8,
+                       help='批次大小（默认8）')
+    parser.add_argument('--no_batch', action='store_true',
+                       help='禁用批处理，使用单样本模式')
     args = parser.parse_args()
 
     # 加载模型
@@ -336,7 +530,9 @@ if __name__ == '__main__':
         model, tokenizer,
         tasks=tasks,
         device=args.device,
-        data_dir=args.data_dir
+        data_dir=args.data_dir,
+        batch_size=args.batch_size,
+        use_batched=not args.no_batch
     )
 
     print(f"\n完整结果: {json.dumps(results, indent=2)}")
