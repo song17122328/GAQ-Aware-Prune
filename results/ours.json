@@ -1,6 +1,6 @@
 {
   "model_path": "prune_log/ppl_search_20251118_005448_ratio_0.7_9.3_freeze_8/pytorch_model.bin",
-  "timestamp": "2025-11-19T21:44:45.869069",
+  "timestamp": "2025-11-19T22:28:46.608587",
   "metrics": {
     "model_info": {
       "total_params": 6307975168,
@@ -19,41 +19,41 @@
     },
     "zeroshot": {
       "boolq": {
-        "accuracy": 0.6217125382262997,
-        "correct": 2033,
+        "accuracy": 0.6700305810397553,
+        "correct": 2191,
         "total": 3270
       },
       "piqa": {
-        "accuracy": 0.6898803046789989,
-        "correct": 1268,
+        "accuracy": 0.6931447225244831,
+        "correct": 1274,
         "total": 1838
       },
       "hellaswag": {
-        "accuracy": 0.34734116709818763,
-        "correct": 3488,
+        "accuracy": 0.35002987452698664,
+        "correct": 3515,
         "total": 10042
       },
       "winogrande": {
-        "accuracy": 0.5043409629044988,
-        "correct": 639,
+        "accuracy": 0.5769534333070244,
+        "correct": 731,
         "total": 1267
       },
       "arc_easy": {
-        "accuracy": 0.45263157894736844,
-        "correct": 258,
+        "accuracy": 0.656140350877193,
+        "correct": 374,
         "total": 570
       },
       "arc_challenge": {
-        "accuracy": 0.30434782608695654,
-        "correct": 91,
+        "accuracy": 0.3177257525083612,
+        "correct": 95,
         "total": 299
       },
       "openbookqa": {
-        "accuracy": 0.192,
-        "correct": 96,
+        "accuracy": 0.24,
+        "correct": 120,
         "total": 500
       }
     },
-    "avg_zeroshot_acc": 0.44460776827747284
+    "avg_zeroshot_acc": 0.5005749592548291
   }
 }

@@ -1,6 +1,6 @@
 {
   "model_path": "/newdata/LLMs/Llama-3-8B-Instruct",
-  "timestamp": "2025-11-19T21:43:17.255791",
+  "timestamp": "2025-11-19T22:33:20.170813",
   "metrics": {
     "model_info": {
       "total_params": 8030261248,
@@ -19,41 +19,41 @@
     },
     "zeroshot": {
       "boolq": {
-        "accuracy": 0.6217125382262997,
-        "correct": 2033,
+        "accuracy": 0.8321100917431192,
+        "correct": 2721,
         "total": 3270
       },
       "piqa": {
-        "accuracy": 0.7752992383025027,
-        "correct": 1425,
+        "accuracy": 0.7867247007616975,
+        "correct": 1446,
         "total": 1838
       },
       "hellaswag": {
-        "accuracy": 0.5483967337183828,
-        "correct": 5507,
+        "accuracy": 0.5531766580362477,
+        "correct": 5555,
         "total": 10042
       },
       "winogrande": {
-        "accuracy": 0.516179952644041,
-        "correct": 654,
+        "accuracy": 0.7221783741120757,
+        "correct": 915,
         "total": 1267
       },
       "arc_easy": {
-        "accuracy": 0.5912280701754385,
-        "correct": 337,
+        "accuracy": 0.8228070175438597,
+        "correct": 469,
         "total": 570
       },
       "arc_challenge": {
-        "accuracy": 0.41471571906354515,
-        "correct": 124,
+        "accuracy": 0.5150501672240803,
+        "correct": 154,
         "total": 299
       },
       "openbookqa": {
-        "accuracy": 0.3,
-        "correct": 150,
+        "accuracy": 0.384,
+        "correct": 192,
         "total": 500
       }
     },
-    "avg_zeroshot_acc": 0.5382188931614585
+    "avg_zeroshot_acc": 0.6594352870601543
   }
 }

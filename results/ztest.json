@@ -1,0 +1,7 @@
+{
+  "model_path": "model/LLMPruner/12_63GB/pytorch_model.bin",
+  "timestamp": "2025-11-19T22:40:02.139983",
+  "metrics": {
+    "zeroshot": null
+  }
+}
