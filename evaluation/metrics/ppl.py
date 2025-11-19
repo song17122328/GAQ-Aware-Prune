@@ -129,24 +129,33 @@ class PPLMetric:
         # WikiText2
         if dataset_name_lower in ['wikitext', 'wikitext2', 'wikitext-2']:
             import os
+            from datasets import load_from_disk
 
-            # 首先尝试从本地缓存加载（离线模式）
-            os.environ['HF_DATASETS_OFFLINE'] = '1'
-            try:
-                dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
-                print("  从本地缓存加载成功")
-            except Exception as e:
-                print(f"  本地缓存未找到，尝试在线下载...")
-                # 切换到在线模式
-                os.environ.pop('HF_DATASETS_OFFLINE', None)
+            # 直接从本地缓存路径加载
+            local_wikitext_path = os.path.expanduser("~/.cache/huggingface/datasets/wikitext")
+            if os.path.exists(local_wikitext_path):
+                print(f"  从本地缓存加载: {local_wikitext_path}")
+                try:
+                    dataset = load_from_disk(local_wikitext_path)
+                    # 选择 wikitext-2-raw-v1 的 test 分割
+                    if 'wikitext-2-raw-v1' in dataset:
+                        dataset = dataset['wikitext-2-raw-v1']['test']
+                    elif 'test' in dataset:
+                        dataset = dataset['test']
+                    text_field = 'text'
+                except Exception as e:
+                    print(f"  本地加载失败: {e}，尝试在线下载...")
+                    dataset = None
+            else:
+                dataset = None
+
+            # 如果本地没有，尝试在线加载
+            if dataset is None:
                 try:
                     dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
-                except Exception as e2:
-                    raise ValueError(f"无法加载 WikiText2: {e2}")
-            finally:
-                # 恢复环境变量
-                os.environ.pop('HF_DATASETS_OFFLINE', None)
-            text_field = 'text'
+                    text_field = 'text'
+                except Exception as e:
+                    raise ValueError(f"无法加载 WikiText2: {e}")
 
         # PTB (Penn TreeBank)
         elif dataset_name_lower in ['ptb', 'penn-treebank', 'penn_treebank']:
