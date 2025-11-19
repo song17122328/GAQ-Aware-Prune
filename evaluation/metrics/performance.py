@@ -95,15 +95,9 @@ def evaluate_zeroshot(
     print(f"任务: {', '.join(tasks)}\n")
 
     try:
-        import lm_eval
-        from lm_eval.models.huggingface import HFLM
-        from lm_eval.tasks import TaskManager
-
         import os
-        # 启用本地任务 (piqa_local 等)
-        use_local_tasks = True
 
-        # 设置本地数据集缓存目录
+        # 设置本地数据集缓存目录 (必须在 import lm_eval 之前)
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         local_cache_dir = os.path.join(project_root, "data", "zeroshot")
 
@@ -111,9 +105,18 @@ def evaluate_zeroshot(
             print(f"设置本地数据集缓存: {local_cache_dir}")
             os.environ['HF_DATASETS_CACHE'] = local_cache_dir
             os.environ['HF_DATASETS_OFFLINE'] = '1'  # 强制离线模式
+            os.environ['HF_HUB_OFFLINE'] = '1'  # 禁止 HuggingFace Hub 网络请求
         else:
             print(f"警告: 本地数据集目录不存在: {local_cache_dir}")
             print("请先运行: python evaluation/download_datasets.py")
+
+        # 导入 lm_eval (在设置环境变量之后)
+        import lm_eval
+        from lm_eval.models.huggingface import HFLM
+        from lm_eval.tasks import TaskManager
+
+        # 启用本地任务 (piqa_local 等)
+        use_local_tasks = True
 
         # 获取自定义任务目录
         tasks_dir = os.path.join(os.path.dirname(__file__), '..', 'tasks')
