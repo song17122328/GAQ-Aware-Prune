@@ -43,29 +43,16 @@ def evaluate_ppl(
     print(f"评估 PPL (seq_len={seq_len})")
     print(f"{'='*60}")
 
-    results = {}
+    # 直接使用 PPLMetric 评估所有数据集（简化调用）
+    ppl_metric = PPLMetric(
+        model=model,
+        tokenizer=tokenizer,
+        datasets=datasets,
+        seq_len=seq_len,
+        device=device
+    )
 
-    for dataset in datasets:
-        print(f"\n测试数据集: {dataset}")
-        try:
-            ppl_metric = PPLMetric(
-                model=model,
-                tokenizer=tokenizer,
-                datasets=[dataset],
-                seq_len=seq_len,
-                device=device
-            )
-
-            # PPLMetric有.results属性存储结果字典
-            for key, value in ppl_metric.results.items():
-                results[key] = value
-                print(f"  ✓ {key}: {value:.2f}")
-
-        except Exception as e:
-            print(f"  ✗ 评估失败: {e}")
-            results[dataset] = None
-
-    return results
+    return ppl_metric.results
 
 
 def evaluate_zeroshot(
