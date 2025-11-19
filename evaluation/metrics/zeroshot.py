@@ -313,7 +313,7 @@ def evaluate_multiple_choice(
 def format_piqa(item: dict) -> Tuple[str, List[str], int]:
     """PIQA 格式化"""
     context = f"Question: {item['goal']}\nAnswer:"
-    choices = [item['sol1'], item['sol2']]
+    choices = [f" {item['sol1']}", f" {item['sol2']}"]  # 添加前导空格
     label = item['label']
     return context, choices, label
 
@@ -321,23 +321,49 @@ def format_piqa(item: dict) -> Tuple[str, List[str], int]:
 def format_boolq(item: dict) -> Tuple[str, List[str], int]:
     """BoolQ 格式化"""
     context = f"{item['passage']}\nQuestion: {item['question']}?\nAnswer:"
-    choices = ["no", "yes"]
+    choices = [" no", " yes"]  # 添加前导空格
     label = 1 if item['answer'] else 0
     return context, choices, label
 
 
 def format_hellaswag(item: dict) -> Tuple[str, List[str], int]:
     """HellaSwag 格式化"""
-    context = item['ctx']
-    choices = item['endings']
+    # 使用 activity_label 和 ctx 组合
+    activity = item.get('activity_label', '')
+    ctx = item['ctx']
+    if activity:
+        context = f"{activity}: {ctx}"
+    else:
+        context = ctx
+    # 添加前导空格
+    choices = [f" {ending}" for ending in item['endings']]
     label = int(item['label'])
     return context, choices, label
 
 
 def format_winogrande(item: dict) -> Tuple[str, List[str], int]:
-    """Winogrande 格式化"""
-    context = item['sentence']
-    choices = [item['option1'], item['option2']]
+    """Winogrande 格式化
+
+    Winogrande 的句子包含 '_' 占位符，需要用选项替换。
+    评估方式：计算替换后句子中选项部分的 log-likelihood。
+    """
+    sentence = item['sentence']
+    option1 = item['option1']
+    option2 = item['option2']
+
+    # 找到 '_' 的位置，分割句子
+    if '_' in sentence:
+        parts = sentence.split('_')
+        context = parts[0]  # '_' 之前的部分作为 context
+        suffix = parts[1] if len(parts) > 1 else ''  # '_' 之后的部分
+
+        # 选项 + 后缀作为 continuation
+        choices = [f"{option1}{suffix}", f"{option2}{suffix}"]
+    else:
+        # 如果没有 '_'，回退到简单模式
+        context = sentence
+        choices = [option1, option2]
+
     # answer 是 "1" 或 "2"，转换为 0 或 1
     label = int(item['answer']) - 1
     return context, choices, label
@@ -346,7 +372,8 @@ def format_winogrande(item: dict) -> Tuple[str, List[str], int]:
 def format_arc(item: dict) -> Tuple[str, List[str], int]:
     """ARC (Easy/Challenge) 格式化"""
     context = f"Question: {item['question']}\nAnswer:"
-    choices = item['choices']['text']
+    # 添加前导空格
+    choices = [f" {text}" for text in item['choices']['text']]
     labels = item['choices']['label']
     answer_key = item['answerKey']
     label = labels.index(answer_key)
@@ -355,8 +382,9 @@ def format_arc(item: dict) -> Tuple[str, List[str], int]:
 
 def format_openbookqa(item: dict) -> Tuple[str, List[str], int]:
     """OpenBookQA 格式化"""
-    context = item['question_stem']
-    choices = item['choices']['text']
+    context = f"Question: {item['question_stem']}\nAnswer:"
+    # 添加前导空格
+    choices = [f" {text}" for text in item['choices']['text']]
     labels = item['choices']['label']
     answer_key = item['answerKey']
     label = labels.index(answer_key)
