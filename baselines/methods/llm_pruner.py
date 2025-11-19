@@ -4,6 +4,7 @@ LLM-Pruner 实现
 
 论文: LLM-Pruner: On the Structural Pruning of Large Language Models
 链接: https://arxiv.org/abs/2305.11627
+github地址: https://github.com/horseee/LLM-Pruner
 
 核心思想:
 - 使用 Taylor 一阶展开估计参数重要性
