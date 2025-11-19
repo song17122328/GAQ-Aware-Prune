@@ -99,38 +99,20 @@ def evaluate_zeroshot(
         from lm_eval.models.huggingface import HFLM
         from lm_eval.tasks import TaskManager
 
-        # 检查是否需要使用本地数据集
         import os
         use_local_tasks = False
 
-        # 设置离线模式，优先从本地缓存加载数据集
-        os.environ['HF_DATASETS_OFFLINE'] = '1'
-        print("已设置离线模式，优先从本地缓存加载数据集...")
+        # 设置本地数据集缓存目录
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        local_cache_dir = os.path.join(project_root, "data", "zeroshot")
 
-        # PIQA: 使用官方 HuggingFace 版本（本地版本存在问题）
-        # 如果需要使用本地版本，可以手动将 'piqa' 替换为 'piqa_local'
-
-        # 检查本地 ARC (检查 JSONL 文件)
-        arc_easy_jsonl = os.path.expanduser("~/.cache/huggingface/datasets/arc_local/arc_easy_test.jsonl")
-        arc_challenge_jsonl = os.path.expanduser("~/.cache/huggingface/datasets/arc_local/arc_challenge_test.jsonl")
-
-        if 'arc_easy' in tasks:
-            if os.path.exists(arc_easy_jsonl):
-                print("检测到本地 ARC-Easy 数据，将使用 arc_easy_local 任务...")
-                use_local_tasks = True
-                tasks = [t if t != 'arc_easy' else 'arc_easy_local' for t in tasks]
-            else:
-                print("警告: 未找到本地 ARC-Easy 数据，将尝试在线下载...")
-                print("如遇问题，请先运行: python evaluation/preload_arc.py")
-
-        if 'arc_challenge' in tasks:
-            if os.path.exists(arc_challenge_jsonl):
-                print("检测到本地 ARC-Challenge 数据，将使用 arc_challenge_local 任务...")
-                use_local_tasks = True
-                tasks = [t if t != 'arc_challenge' else 'arc_challenge_local' for t in tasks]
-            else:
-                print("警告: 未找到本地 ARC-Challenge 数据，将尝试在线下载...")
-                print("如遇问题，请先运行: python evaluation/preload_arc.py")
+        if os.path.exists(local_cache_dir):
+            print(f"设置本地数据集缓存: {local_cache_dir}")
+            os.environ['HF_DATASETS_CACHE'] = local_cache_dir
+            os.environ['HF_DATASETS_OFFLINE'] = '1'  # 强制离线模式
+        else:
+            print(f"警告: 本地数据集目录不存在: {local_cache_dir}")
+            print("请先运行: python evaluation/download_datasets.py")
 
         # 获取自定义任务目录
         tasks_dir = os.path.join(os.path.dirname(__file__), '..', 'tasks')
