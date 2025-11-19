@@ -13,6 +13,9 @@ from .ppl import PPLMetric, evaluate_perplexity
 # 性能评估
 from .performance import evaluate_ppl, evaluate_zeroshot, evaluate_fewshot
 
+# 自定义 Zero-shot 评估 (不依赖 lm-eval)
+from .zeroshot import evaluate_zeroshot_custom
+
 # 效率评估
 from .efficiency import evaluate_efficiency, measure_inference_speed
 
@@ -25,6 +28,7 @@ __all__ = [
     'evaluate_ppl',
     'evaluate_zeroshot',
     'evaluate_fewshot',
+    'evaluate_zeroshot_custom',
 
     # Efficiency
     'evaluate_efficiency',

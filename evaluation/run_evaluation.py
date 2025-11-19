@@ -38,6 +38,7 @@ from evaluation.metrics.performance import (
     evaluate_fewshot,
     compute_average_accuracy
 )
+from evaluation.metrics.zeroshot import evaluate_zeroshot_custom
 from evaluation.metrics.efficiency import evaluate_efficiency
 from evaluation.utils.model_loader import (
     load_model_and_tokenizer,
@@ -55,7 +56,8 @@ def evaluate_single_model(
     ppl_datasets: List[str] = None,
     zeroshot_tasks: List[str] = None,
     speed_samples: int = 50,
-    verbose: bool = True
+    verbose: bool = True,
+    use_custom_zeroshot: bool = True
 ) -> Dict:
     """
     评估单个模型
@@ -68,6 +70,7 @@ def evaluate_single_model(
         zeroshot_tasks: Zero-shot任务列表
         speed_samples: 速度测试样本数
         verbose: 是否打印详细信息
+        use_custom_zeroshot: 是否使用自定义 zeroshot 评估器（不依赖 lm-eval）
 
     Returns:
         评估结果字典
@@ -110,18 +113,44 @@ def evaluate_single_model(
 
     # 2. Zero-shot评估
     if 'zeroshot' in metrics:
-        # evaluate_zeroshot 支持 HF格式和 .bin checkpoint
-        zeroshot_results = evaluate_zeroshot(
-            model_path,
-            tasks=zeroshot_tasks,
-            device=device
-        )
+        if use_custom_zeroshot:
+            # 使用自定义评估器（不依赖 lm-eval，更稳定）
+            # 需要已加载的模型
+            if model is None:
+                model, tokenizer = load_model_and_tokenizer(
+                    model_path,
+                    device=device,
+                    force_single_device=True
+                )
+
+            # 转换任务名称（去掉 _local 后缀）
+            tasks = [t.replace('_local', '') for t in zeroshot_tasks] if zeroshot_tasks else None
+
+            zeroshot_results = evaluate_zeroshot_custom(
+                model, tokenizer,
+                tasks=tasks,
+                device=device
+            )
+        else:
+            # 使用 lm-eval（可能有网络问题）
+            zeroshot_results = evaluate_zeroshot(
+                model_path,
+                tasks=zeroshot_tasks,
+                device=device
+            )
+
         results['metrics']['zeroshot'] = zeroshot_results
 
         if zeroshot_results:
-            avg_acc = compute_average_accuracy(zeroshot_results)
-            results['metrics']['avg_zeroshot_acc'] = avg_acc
-            print(f"\n平均Zero-shot准确率: {avg_acc*100:.2f}%")
+            # 计算平均准确率
+            accuracies = []
+            for task, res in zeroshot_results.items():
+                if isinstance(res, dict) and 'accuracy' in res:
+                    accuracies.append(res['accuracy'])
+            if accuracies:
+                avg_acc = sum(accuracies) / len(accuracies)
+                results['metrics']['avg_zeroshot_acc'] = avg_acc
+                print(f"\n平均Zero-shot准确率: {avg_acc*100:.2f}%")
 
     # 3. Few-shot评估（可选）
     if 'fewshot' in metrics:
@@ -292,10 +321,12 @@ def main():
     parser.add_argument('--ppl_datasets', type=str, default='wikitext2,ptb',
                        help='PPL数据集（逗号分隔）')
     parser.add_argument('--zeroshot_tasks', type=str,
-                       default='boolq_local,piqa_local,hellaswag_local,winogrande_local,arc_easy_local,arc_challenge_local,openbookqa_local',
-                       help='Zero-shot任务（逗号分隔），使用 *_local 版本从本地加载数据')
+                       default='boolq,piqa,hellaswag,winogrande,arc_easy,arc_challenge,openbookqa',
+                       help='Zero-shot任务（逗号分隔）')
     parser.add_argument('--speed_samples', type=int, default=50,
                        help='速度测试样本数')
+    parser.add_argument('--use_lm_eval', action='store_true',
+                       help='使用 lm-eval 库进行 zero-shot 评估（默认使用自定义评估器）')
 
     args = parser.parse_args()
 
@@ -333,7 +364,8 @@ def main():
         device=args.device,
         ppl_datasets=args.ppl_datasets.split(',') if args.ppl_datasets else None,
         zeroshot_tasks=args.zeroshot_tasks.split(',') if args.zeroshot_tasks else None,
-        speed_samples=args.speed_samples
+        speed_samples=args.speed_samples,
+        use_custom_zeroshot=not args.use_lm_eval
     )
 
     # 保存结果
