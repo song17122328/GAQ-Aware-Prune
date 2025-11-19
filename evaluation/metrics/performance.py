@@ -62,7 +62,7 @@ def evaluate_zeroshot(
     device: str = 'cuda'
 ) -> Dict[str, Dict]:
     """
-    使用lm-evaluation-harness评估Zero-shot任务
+    使用lm-evaluation-harness评估Zero-shot任务（在线加载数据集）
 
     Args:
         model_path: 模型路径（支持HF目录或.bin checkpoint）
@@ -74,55 +74,33 @@ def evaluate_zeroshot(
         评估结果字典
 
     注意：
-        - 支持HF格式目录和.bin checkpoint文件
+        - 使用 lm-eval 标准任务，在线加载数据集
         - 需要安装 lm-eval: pip install lm-eval
         - .bin文件会自动使用自定义加载器
     """
-    # 使用所有本地任务 (避免网络请求)
+    # 使用标准 lm-eval 任务名称（在线加载）
     if tasks is None:
         tasks = [
-            'boolq_local',        # 是非问答
-            'piqa_local',         # 物理常识
-            'hellaswag_local',    # 常识推理
-            'winogrande_local',   # 代词消歧
-            'arc_easy_local',     # 科学问答（简单）
-            'arc_challenge_local', # 科学问答（困难）
-            'openbookqa_local'    # 科学推理
+            'boolq',           # 是非问答
+            'piqa',            # 物理常识
+            'hellaswag',       # 常识推理
+            'winogrande',      # 代词消歧
+            'arc_easy',        # 科学问答（简单）
+            'arc_challenge',   # 科学问答（困难）
+            'openbookqa'       # 科学推理
         ]
 
     print(f"\n{'='*60}")
-    print(f"评估 Zero-shot 任务")
+    print(f"评估 Zero-shot 任务 (lm-eval 在线模式)")
     print(f"{'='*60}")
     print(f"任务: {', '.join(tasks)}\n")
 
     try:
-        import os
-
-        # 设置离线模式 (必须在 import lm_eval 之前)
-        os.environ['HF_DATASETS_OFFLINE'] = '1'
-        os.environ['HF_HUB_OFFLINE'] = '1'
-
-        # 获取项目路径
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        local_cache_dir = os.path.join(project_root, "data", "zeroshot")
-
-        if not os.path.exists(local_cache_dir):
-            print(f"错误: 本地数据集目录不存在: {local_cache_dir}")
-            print("请先运行: python evaluation/download_datasets.py")
-            return None
-
-        # 生成本地任务的 YAML 配置文件
-        print("生成本地任务配置...")
-        from evaluation.tasks.local_tasks import generate_yaml_configs
-        tasks_dir = os.path.join(os.path.dirname(__file__), '..', 'tasks')
-        generate_yaml_configs(tasks_dir)
-
-        # 导入 lm_eval (在设置环境变量之后)
+        # 导入 lm_eval
         import lm_eval
         from lm_eval.models.huggingface import HFLM
-        from lm_eval.tasks import TaskManager
 
-        print("开始评估...")
+        print("开始评估（从 HuggingFace 在线加载数据集）...")
 
         # 检查是否是checkpoint文件
         if model_path.endswith('.bin'):
@@ -137,7 +115,6 @@ def evaluate_zeroshot(
             )
 
             # 使用HFLM包装预加载的模型
-            # lm-eval支持直接传入model对象
             lm = HFLM(
                 pretrained=model,
                 tokenizer=tokenizer,
@@ -145,26 +122,20 @@ def evaluate_zeroshot(
             )
 
             # 使用包装后的模型进行评估
-            eval_kwargs = {
-                "model": lm,
-                "tasks": tasks,
-                "log_samples": False,
-                "task_manager": TaskManager(include_path=tasks_dir)
-            }
-
-            results = lm_eval.simple_evaluate(**eval_kwargs)
+            results = lm_eval.simple_evaluate(
+                model=lm,
+                tasks=tasks,
+                log_samples=False
+            )
         else:
             # HF格式，直接使用路径
-            eval_kwargs = {
-                "model": "hf",
-                "model_args": f"pretrained={model_path},dtype=float16,device={device}",
-                "tasks": tasks,
-                "batch_size": batch_size,
-                "log_samples": False,
-                "task_manager": TaskManager(include_path=tasks_dir)
-            }
-
-            results = lm_eval.simple_evaluate(**eval_kwargs)
+            results = lm_eval.simple_evaluate(
+                model="hf",
+                model_args=f"pretrained={model_path},dtype=float16,device={device}",
+                tasks=tasks,
+                batch_size=batch_size,
+                log_samples=False
+            )
 
         # 提取关键结果
         summary = {}
@@ -181,28 +152,21 @@ def evaluate_zeroshot(
                     elif 'acc' in key and acc is None:
                         acc = value
 
-                # 将本地任务名称映射回原始名称 (用于显示)
-                result_task_name = task.replace('_local', '')
-
-                summary[result_task_name] = {
+                summary[task] = {
                     'accuracy': acc,
                     'full_results': task_results
                 }
 
-                print(f"  ✓ {result_task_name}: {acc*100:.2f}%" if acc is not None else f"  ✓ {result_task_name}: N/A")
+                print(f"  ✓ {task}: {acc*100:.2f}%" if acc is not None else f"  ✓ {task}: N/A")
 
-        # 恢复环境变量
-        os.environ.pop('HF_DATASETS_OFFLINE', None)
         return summary
 
     except ImportError:
-        os.environ.pop('HF_DATASETS_OFFLINE', None)
         print("✗ lm-eval未安装")
         print("请安装: pip install lm-eval")
         return None
 
     except Exception as e:
-        os.environ.pop('HF_DATASETS_OFFLINE', None)
         print(f"✗ 评估失败: {e}")
         import traceback
         traceback.print_exc()

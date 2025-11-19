@@ -338,7 +338,7 @@ def main():
     parser.add_argument('--zeroshot_batch_size', type=int, default=8,
                        help='Zero-shot 批处理大小（默认8，仅对自定义评估器有效）')
     parser.add_argument('--use_lm_eval', action='store_true',
-                       help='使用 lm-eval 库进行 zero-shot 评估（默认使用自定义评估器）')
+                       help='使用 lm-eval 在线模式（从 HuggingFace 加载数据）。默认使用自定义评估器（从本地加载数据）')
 
     args = parser.parse_args()
 
