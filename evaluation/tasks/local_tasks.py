@@ -52,7 +52,7 @@ LOCAL_TASK_CONFIGS = {
         'output_type': 'multiple_choice',
         'validation_split': 'validation',
         'doc_to_text': 'Question: {{goal}}\nAnswer:',
-        'doc_to_target': '{{label}}',
+        'doc_to_target': '{{label|int}}',
         'doc_to_choice': ['{{sol1}}', '{{sol2}}'],
         'metric_list': [
             {'metric': 'acc', 'aggregation': 'mean', 'higher_is_better': True},
@@ -65,7 +65,7 @@ LOCAL_TASK_CONFIGS = {
         'output_type': 'multiple_choice',
         'validation_split': 'validation',
         'doc_to_text': '{{ctx}}',
-        'doc_to_target': '{{label}}',
+        'doc_to_target': '{{label|int}}',
         'doc_to_choice': '{{endings}}',
         'metric_list': [
             {'metric': 'acc', 'aggregation': 'mean', 'higher_is_better': True},
