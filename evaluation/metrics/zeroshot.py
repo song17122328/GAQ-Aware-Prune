@@ -16,6 +16,8 @@
 
 import os
 import json
+import re
+import html
 import torch
 import torch.nn.functional as F
 from typing import Dict, List, Tuple, Optional
@@ -100,7 +102,7 @@ def compute_loglikelihood_batched(
     contexts: List[str],
     continuations: List[str],
     device: str
-) -> List[float]:
+) -> List[Tuple[float, int]]:
     """
     批量计算多个 (context, continuation) 对的 log-likelihood
 
@@ -112,7 +114,7 @@ def compute_loglikelihood_batched(
         device: 设备
 
     Returns:
-        log-likelihood 值列表
+        List of (log_likelihood, num_tokens) tuples for length normalization
     """
     if len(contexts) != len(continuations):
         raise ValueError("contexts 和 continuations 长度必须相同")
@@ -154,7 +156,7 @@ def compute_loglikelihood_batched(
         logits = outputs.logits
 
     # 计算每个样本的 log-likelihood
-    log_likelihoods = []
+    results = []
 
     for i in range(batch_size):
         context_len = len(all_context_ids[i])
@@ -162,7 +164,7 @@ def compute_loglikelihood_batched(
         continuation_len = all_continuation_lengths[i]
 
         if continuation_len == 0:
-            log_likelihoods.append(float('-inf'))
+            results.append((float('-inf'), 1))
             continue
 
         # 计算续写部分的 log-likelihood
@@ -179,9 +181,9 @@ def compute_loglikelihood_batched(
             log_probs = F.log_softmax(token_logits, dim=-1)
             log_likelihood += log_probs[token_id].item()
 
-        log_likelihoods.append(log_likelihood)
+        results.append((log_likelihood, continuation_len))
 
-    return log_likelihoods
+    return results
 
 
 def evaluate_multiple_choice_batched(
@@ -236,21 +238,23 @@ def evaluate_multiple_choice_batched(
                 batch_indices.append((item_idx, choice_idx))
 
         # 批量计算 log-likelihood
-        log_likelihoods = compute_loglikelihood_batched(
+        ll_results = compute_loglikelihood_batched(
             model, tokenizer, batch_contexts, batch_continuations, device
         )
 
         # 整理结果并判断
-        item_scores = {}  # item_idx -> [scores for each choice]
-        for (item_idx, choice_idx), ll in zip(batch_indices, log_likelihoods):
+        item_scores = {}  # item_idx -> [(ll, num_tokens) for each choice]
+        for (item_idx, choice_idx), (ll, num_tokens) in zip(batch_indices, ll_results):
             if item_idx not in item_scores:
                 item_scores[item_idx] = []
-            item_scores[item_idx].append(ll)
+            item_scores[item_idx].append((ll, num_tokens))
 
-        # 计算准确率
+        # 计算准确率 (使用 length-normalized scores，即 acc_norm)
         for item_idx, (context, choices, label) in enumerate(batch_items):
-            scores = item_scores[item_idx]
-            pred = scores.index(max(scores))
+            scores_with_len = item_scores[item_idx]
+            # 使用长度归一化的分数 (log_likelihood / num_tokens)
+            normalized_scores = [ll / num_tokens for ll, num_tokens in scores_with_len]
+            pred = normalized_scores.index(max(normalized_scores))
 
             if pred == label:
                 correct += 1
@@ -330,7 +334,21 @@ def format_hellaswag(item: dict) -> Tuple[str, List[str], int]:
     """HellaSwag 格式化
 
     lm-eval 使用 ctx_a + ctx_b 作为 context，并对 endings 进行预处理。
+    包括 HTML 实体解码和特殊标记处理。
     """
+    def preprocess_text(text):
+        """预处理文本：解码 HTML 实体，处理特殊标记"""
+        # 解码 HTML 实体 (如 &amp; -> &, &quot; -> ")
+        text = html.unescape(text)
+        # 去除 [header] [title] 等标记
+        text = re.sub(r'\[header\]\s*', '', text)
+        text = re.sub(r'\[title\]\s*', '', text)
+        text = re.sub(r'\[step\]\s*', '', text)
+        text = re.sub(r'\[substeps\]\s*', '', text)
+        # 清理多余空格
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+
     activity = item.get('activity_label', '')
 
     # lm-eval 使用 ctx_a 和 ctx_b
@@ -339,10 +357,15 @@ def format_hellaswag(item: dict) -> Tuple[str, List[str], int]:
 
     # 如果没有 ctx_a/ctx_b，回退到 ctx
     if ctx_a and ctx_b:
+        ctx_a = preprocess_text(ctx_a)
+        ctx_b = preprocess_text(ctx_b)
         # ctx_b 首字母大写并添加到 ctx_a 后
-        ctx = ctx_a + " " + ctx_b.strip()[0].upper() + ctx_b.strip()[1:] if ctx_b.strip() else ctx_a
+        if ctx_b:
+            ctx = ctx_a + " " + ctx_b[0].upper() + ctx_b[1:]
+        else:
+            ctx = ctx_a
     else:
-        ctx = item.get('ctx', '')
+        ctx = preprocess_text(item.get('ctx', ''))
 
     # 构建 context
     if activity:
@@ -350,18 +373,13 @@ def format_hellaswag(item: dict) -> Tuple[str, List[str], int]:
     else:
         context = ctx
 
-    # 预处理 endings（去除 [header] 等标记）
-    def preprocess_ending(ending):
-        ending = ending.strip()
-        # 去除 [header] 标记
-        if ending.startswith('[header]'):
-            ending = ending[8:].strip()
-        if ending.startswith('[title]'):
-            ending = ending[7:].strip()
+    # 预处理 endings
+    choices = []
+    for ending in item['endings']:
+        ending = preprocess_text(ending)
         # 确保有前导空格
-        return f" {ending}"
+        choices.append(f" {ending}")
 
-    choices = [preprocess_ending(ending) for ending in item['endings']]
     label = int(item['label'])
     return context, choices, label
 
