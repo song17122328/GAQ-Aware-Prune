@@ -327,16 +327,41 @@ def format_boolq(item: dict) -> Tuple[str, List[str], int]:
 
 
 def format_hellaswag(item: dict) -> Tuple[str, List[str], int]:
-    """HellaSwag 格式化"""
-    # 使用 activity_label 和 ctx 组合
+    """HellaSwag 格式化
+
+    lm-eval 使用 ctx_a + ctx_b 作为 context，并对 endings 进行预处理。
+    """
     activity = item.get('activity_label', '')
-    ctx = item['ctx']
+
+    # lm-eval 使用 ctx_a 和 ctx_b
+    ctx_a = item.get('ctx_a', '')
+    ctx_b = item.get('ctx_b', '')
+
+    # 如果没有 ctx_a/ctx_b，回退到 ctx
+    if ctx_a and ctx_b:
+        # ctx_b 首字母大写并添加到 ctx_a 后
+        ctx = ctx_a + " " + ctx_b.strip()[0].upper() + ctx_b.strip()[1:] if ctx_b.strip() else ctx_a
+    else:
+        ctx = item.get('ctx', '')
+
+    # 构建 context
     if activity:
         context = f"{activity}: {ctx}"
     else:
         context = ctx
-    # 添加前导空格
-    choices = [f" {ending}" for ending in item['endings']]
+
+    # 预处理 endings（去除 [header] 等标记）
+    def preprocess_ending(ending):
+        ending = ending.strip()
+        # 去除 [header] 标记
+        if ending.startswith('[header]'):
+            ending = ending[8:].strip()
+        if ending.startswith('[title]'):
+            ending = ending[7:].strip()
+        # 确保有前导空格
+        return f" {ending}"
+
+    choices = [preprocess_ending(ending) for ending in item['endings']]
     label = int(item['label'])
     return context, choices, label
 
@@ -381,8 +406,19 @@ def format_arc(item: dict) -> Tuple[str, List[str], int]:
 
 
 def format_openbookqa(item: dict) -> Tuple[str, List[str], int]:
-    """OpenBookQA 格式化"""
-    context = f"Question: {item['question_stem']}\nAnswer:"
+    """OpenBookQA 格式化
+
+    lm-eval 使用 fact1 作为额外上下文。
+    """
+    # 获取 fact1（如果存在）
+    fact1 = item.get('fact1', '')
+
+    # 构建 context
+    if fact1:
+        context = f"{fact1}\nQuestion: {item['question_stem']}\nAnswer:"
+    else:
+        context = f"Question: {item['question_stem']}\nAnswer:"
+
     # 添加前导空格
     choices = [f" {text}" for text in item['choices']['text']]
     labels = item['choices']['label']
