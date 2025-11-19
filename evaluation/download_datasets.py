@@ -141,6 +141,85 @@ def download_c4(save_dir: str, num_samples: int = 10000):
         raise
 
 
+def download_piqa_from_official(save_dir: str):
+    """从官方 GitHub 下载 PIQA 数据集"""
+    import requests
+    import json
+    from datasets import Dataset, DatasetDict
+
+    piqa_dir = os.path.join(save_dir, "piqa")
+    os.makedirs(piqa_dir, exist_ok=True)
+
+    # PIQA 官方数据 URL
+    BASE_URL = "https://raw.githubusercontent.com/ybisk/ybisk.github.io/master/piqa/data"
+
+    files = {
+        'train': (f"{BASE_URL}/train.jsonl", f"{BASE_URL}/train-labels.lst"),
+        'validation': (f"{BASE_URL}/valid.jsonl", f"{BASE_URL}/valid-labels.lst"),
+    }
+
+    datasets = {}
+
+    for split, (data_url, labels_url) in files.items():
+        print(f"    下载 {split} 集...")
+
+        # 下载数据
+        data_response = requests.get(data_url, timeout=60)
+        data_response.raise_for_status()
+
+        # 下载标签
+        labels_response = requests.get(labels_url, timeout=60)
+        labels_response.raise_for_status()
+
+        # 解析数据
+        data_lines = data_response.text.strip().split('\n')
+        labels = labels_response.text.strip().split('\n')
+
+        goals = []
+        sol1s = []
+        sol2s = []
+        label_list = []
+
+        for line, label in zip(data_lines, labels):
+            item = json.loads(line)
+            goals.append(item['goal'])
+            sol1s.append(item['sol1'])
+            sol2s.append(item['sol2'])
+            label_list.append(int(label))
+
+        datasets[split] = Dataset.from_dict({
+            'goal': goals,
+            'sol1': sol1s,
+            'sol2': sol2s,
+            'label': label_list
+        })
+
+        print(f"      - {len(goals)} 样本")
+
+    # 保存数据集 (HuggingFace 格式)
+    dataset_dict = DatasetDict(datasets)
+    dataset_dict.save_to_disk(piqa_dir)
+
+    # 同时保存 jsonl 格式供 lm-eval 使用
+    import json
+
+    for split in ['train', 'validation']:
+        jsonl_path = os.path.join(piqa_dir, f"{split}.jsonl")
+        with open(jsonl_path, 'w', encoding='utf-8') as f:
+            ds = datasets[split]
+            for i in range(len(ds)):
+                item = {
+                    'goal': ds['goal'][i],
+                    'sol1': ds['sol1'][i],
+                    'sol2': ds['sol2'][i],
+                    'label': ds['label'][i]
+                }
+                f.write(json.dumps(item, ensure_ascii=False) + '\n')
+        print(f"      - 保存 {jsonl_path}")
+
+    return piqa_dir
+
+
 def download_zeroshot_datasets(save_dir: str):
     """下载 Zero-shot 评估所需的 7 个数据集到本地缓存"""
     from datasets import load_dataset
@@ -156,10 +235,9 @@ def download_zeroshot_datasets(save_dir: str):
     # 设置环境变量，让数据集下载到指定目录
     os.environ['HF_DATASETS_CACHE'] = zeroshot_dir
 
-    # Zero-shot 任务对应的数据集
+    # Zero-shot 任务对应的数据集 (不包括 piqa，单独处理)
     ZEROSHOT_DATASETS = {
         'boolq': ('google/boolq', None),
-        'piqa': ('piqa', None),
         'hellaswag': ('Rowan/hellaswag', None),
         'winogrande': ('winogrande', 'winogrande_xl'),
         'arc_easy': ('allenai/ai2_arc', 'ARC-Easy'),
@@ -167,6 +245,15 @@ def download_zeroshot_datasets(save_dir: str):
         'openbookqa': ('allenai/openbookqa', 'main'),
     }
 
+    # 先处理 piqa (从官方源下载)
+    try:
+        print(f"  下载 piqa (从官方 GitHub)...")
+        piqa_path = download_piqa_from_official(zeroshot_dir)
+        print(f"    ✓ 完成，保存到: {piqa_path}")
+    except Exception as e:
+        print(f"    ✗ 失败: {e}")
+
+    # 下载其他数据集
     for task_name, (dataset_name, config) in ZEROSHOT_DATASETS.items():
         try:
             print(f"  下载 {task_name} ({dataset_name})...")

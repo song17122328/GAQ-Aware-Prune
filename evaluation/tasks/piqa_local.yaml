@@ -1,10 +1,16 @@
+# PIQA 本地任务配置
+# 注意：此文件为模板，实际数据路径在 piqa_local_task.py 中动态设置
+# 使用方法：确保已运行 python evaluation/download_datasets.py 下载数据
+
 task: piqa_local
+group: commonsense_reasoning
 dataset_path: json
 dataset_kwargs:
+  # 这些路径会被 piqa_local_task.py 动态替换
   data_files:
-    test: /data/home/yuanxiaosong/.cache/huggingface/datasets/piqa_local_jsonl/valid_with_labels.jsonl
+    validation: validation.jsonl
 output_type: multiple_choice
-test_split: test
+validation_split: validation
 doc_to_text: "Question: {{goal}}\nAnswer:"
 doc_to_target: "{{label}}"
 doc_to_choice:

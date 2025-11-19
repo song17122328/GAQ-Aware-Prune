@@ -81,7 +81,7 @@ def evaluate_zeroshot(
     if tasks is None:
         tasks = [
             'boolq',          # 是非问答
-            'piqa',           # 物理常识
+            'piqa_local',     # 物理常识 (使用本地数据)
             'hellaswag',      # 常识推理
             'winogrande',     # 代词消歧
             'arc_easy',       # 科学问答（简单）
@@ -100,7 +100,8 @@ def evaluate_zeroshot(
         from lm_eval.tasks import TaskManager
 
         import os
-        use_local_tasks = False
+        # 启用本地任务 (piqa_local 等)
+        use_local_tasks = True
 
         # 设置本地数据集缓存目录
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -180,11 +181,9 @@ def evaluate_zeroshot(
                     elif 'acc' in key and acc is None:
                         acc = value
 
-                # 将本地任务名称映射回原始名称
+                # 将本地任务名称映射回原始名称 (用于显示)
                 task_name_map = {
                     'piqa_local': 'piqa',
-                    'arc_easy_local': 'arc_easy',
-                    'arc_challenge_local': 'arc_challenge'
                 }
                 result_task_name = task_name_map.get(task, task)
 
