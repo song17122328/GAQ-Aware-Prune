@@ -292,8 +292,8 @@ def main():
     parser.add_argument('--ppl_datasets', type=str, default='wikitext2,ptb',
                        help='PPL数据集（逗号分隔）')
     parser.add_argument('--zeroshot_tasks', type=str,
-                       default='boolq,piqa,hellaswag,winogrande,arc_easy,arc_challenge,openbookqa',
-                       help='Zero-shot任务（逗号分隔）')
+                       default='boolq_local,piqa_local,hellaswag_local,winogrande_local,arc_easy_local,arc_challenge_local,openbookqa_local',
+                       help='Zero-shot任务（逗号分隔），使用 *_local 版本从本地加载数据')
     parser.add_argument('--speed_samples', type=int, default=50,
                        help='速度测试样本数')
 

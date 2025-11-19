@@ -47,6 +47,20 @@ LOCAL_TASK_CONFIGS = {
             {'metric': 'acc', 'aggregation': 'mean', 'higher_is_better': True}
         ]
     },
+    'piqa_local': {
+        'task': 'piqa_local',
+        'group': 'commonsense_reasoning',
+        'dataset_path': 'json',
+        'output_type': 'multiple_choice',
+        'validation_split': 'validation',
+        'doc_to_text': 'Question: {{goal}}\nAnswer:',
+        'doc_to_target': '{{label}}',
+        'doc_to_choice': ['{{sol1}}', '{{sol2}}'],
+        'metric_list': [
+            {'metric': 'acc', 'aggregation': 'mean', 'higher_is_better': True},
+            {'metric': 'acc_norm', 'aggregation': 'mean', 'higher_is_better': True}
+        ]
+    },
     'hellaswag_local': {
         'task': 'hellaswag_local',
         'group': 'commonsense_reasoning',
