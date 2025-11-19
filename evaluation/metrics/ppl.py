@@ -129,19 +129,20 @@ class PPLMetric:
         # WikiText2
         if dataset_name_lower in ['wikitext', 'wikitext2', 'wikitext-2']:
             import os
-            from datasets import load_from_disk
+            import glob
+            from datasets import Dataset
 
-            # 直接从本地缓存路径加载
-            local_wikitext_path = os.path.expanduser("~/.cache/huggingface/datasets/wikitext")
-            if os.path.exists(local_wikitext_path):
-                print(f"  从本地缓存加载: {local_wikitext_path}")
+            # 从本地缓存加载 arrow 文件
+            cache_dir = os.path.expanduser("~/.cache/huggingface/datasets/wikitext")
+            arrow_pattern = os.path.join(cache_dir, "wikitext-2-raw-v1", "*", "*test*.arrow")
+            arrow_files = glob.glob(arrow_pattern)
+
+            if arrow_files:
+                # 使用最新的 arrow 文件
+                arrow_file = sorted(arrow_files)[-1]
+                print(f"  从本地缓存加载: {arrow_file}")
                 try:
-                    dataset = load_from_disk(local_wikitext_path)
-                    # 选择 wikitext-2-raw-v1 的 test 分割
-                    if 'wikitext-2-raw-v1' in dataset:
-                        dataset = dataset['wikitext-2-raw-v1']['test']
-                    elif 'test' in dataset:
-                        dataset = dataset['test']
+                    dataset = Dataset.from_file(arrow_file)
                     text_field = 'text'
                 except Exception as e:
                     print(f"  本地加载失败: {e}，尝试在线下载...")
