@@ -1,0 +1,19 @@
+{
+  "model_path": "/newdata/LLMs/Llama-3-8B-Instruct",
+  "timestamp": "2025-11-19T21:11:22.560615",
+  "metrics": {
+    "zeroshot": {
+      "piqa": {
+        "accuracy": 0.4956474428726877,
+        "full_results": {
+          "alias": "piqa_local",
+          "acc,none": 0.4956474428726877,
+          "acc_stderr,none": 0.011665382144642363,
+          "acc_norm,none": 0.4956474428726877,
+          "acc_norm_stderr,none": 0.011665382144642363
+        }
+      }
+    },
+    "avg_zeroshot_acc": 0.4956474428726877
+  }
+}
