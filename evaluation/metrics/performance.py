@@ -101,6 +101,7 @@ def evaluate_zeroshot(
         from lm_eval.models.huggingface import HFLM
 
         print("开始评估（从 HuggingFace 在线加载数据集）...")
+        print("首次运行可能需要下载数据集，请耐心等待...\n")
 
         # 检查是否是checkpoint文件
         if model_path.endswith('.bin'):
@@ -125,7 +126,8 @@ def evaluate_zeroshot(
             results = lm_eval.simple_evaluate(
                 model=lm,
                 tasks=tasks,
-                log_samples=False
+                log_samples=False,
+                verbosity="INFO"  # 显示更多信息
             )
         else:
             # HF格式，直接使用路径
@@ -134,7 +136,8 @@ def evaluate_zeroshot(
                 model_args=f"pretrained={model_path},dtype=float16,device={device}",
                 tasks=tasks,
                 batch_size=batch_size,
-                log_samples=False
+                log_samples=False,
+                verbosity="INFO"  # 显示更多信息
             )
 
         # 提取关键结果
