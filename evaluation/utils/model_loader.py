@@ -41,8 +41,10 @@ def load_model_and_tokenizer(
 
     # 判断是checkpoint还是目录
     if model_path.endswith('.bin'):
-        # 剪枝checkpoint - 需要从保存的字典中加载
-        checkpoint = torch.load(model_path, map_location='cpu', weights_only=False)
+        # 剪枝checkpoint - 直接加载到目标设备
+        target_device = device if device.startswith('cuda') and force_single_device else 'cpu'
+        print(f"  直接加载checkpoint到 {target_device}...")
+        checkpoint = torch.load(model_path, map_location=target_device, weights_only=False)
 
         if isinstance(checkpoint, dict) and 'model' in checkpoint:
             # 完整保存格式（包含model, tokenizer, config等）
@@ -60,11 +62,6 @@ def load_model_and_tokenizer(
         else:
             # 只保存了state_dict的格式
             raise ValueError(f"不支持的checkpoint格式。请确保保存时包含完整的model对象。")
-
-        # Checkpoint加载后移动到GPU
-        if device.startswith('cuda') and force_single_device:
-            print(f"  移动checkpoint模型到 {device}...")
-            model = model.to(device)
 
     else:
         # HuggingFace模型目录
