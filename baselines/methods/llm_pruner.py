@@ -14,6 +14,21 @@ github地址: https://github.com/horseee/LLM-Pruner
 实现优先级: 第一阶段（必须实现）
 """
 
+
+"""
+克隆项目git clone https://github.com/horseee/LLM-Pruner
+然后执行
+python llama3.py --pruning_ratio 0.3 \
+                 --device cuda:6 --eval_device cuda:6 \
+                 --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+                 --block_wise --block_mlp_layer_start 4 --block_mlp_layer_end 30 \
+                 --block_attention_layer_start 4 --block_attention_layer_end 30 \
+                 --save_ckpt_log_name llama3_8B_LLMPrune \
+                 --pruner_type taylor --taylor param_first \
+                 --max_seq_len 2048 \
+                 --save_model 
+"""
+
 import torch
 from typing import Dict, Any
 from .base_pruner import BasePruner

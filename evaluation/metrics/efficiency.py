@@ -40,7 +40,7 @@ def evaluate_efficiency(
         包含所有效率指标的字典
     """
     print(f"\n{'='*60}")
-    print(f"评估效率指标")
+    print(f"评估效率指标,当前的设备是{device}")
     print(f"{'='*60}")
 
     results = {}

@@ -1,0 +1,50 @@
+{
+  "model_path": "prune_log/ppl_search_20251118_005448_ratio_0.7_9.3_freeze_8/pytorch_model.bin",
+  "timestamp": "2025-11-19T17:32:28.194503",
+  "metrics": {
+    "model_info": {
+      "total_params": 6307975168,
+      "trainable_params": 1268789248,
+      "total_params_M": 6307.975168,
+      "total_params_B": 6.307975168,
+      "attention_params": 1216348160,
+      "mlp_params": 4040687616,
+      "attention_params_M": 1216.34816,
+      "mlp_params_M": 4040.687616,
+      "attention_ratio": 0.1928270368232369,
+      "mlp_ratio": 0.6405680917227098,
+      "num_layers": 32,
+      "model_size_mb": 12031.507934570312,
+      "model_size_gb": 11.74951946735382
+    },
+    "efficiency": {
+      "model_info": {
+        "total_params": 6307975168,
+        "trainable_params": 1268789248,
+        "total_params_M": 6307.975168,
+        "total_params_B": 6.307975168,
+        "attention_params": 1216348160,
+        "mlp_params": 4040687616,
+        "attention_params_M": 1216.34816,
+        "mlp_params_M": 4040.687616,
+        "attention_ratio": 0.1928270368232369,
+        "mlp_ratio": 0.6405680917227098,
+        "num_layers": 32,
+        "model_size_mb": 12031.507934570312,
+        "model_size_gb": 11.74951946735382
+      },
+      "speed": {
+        "batch_size_1": {
+          "throughput_tokens_per_sec": 30.175610230885816,
+          "latency_ms_per_token": 33.1393463909626,
+          "total_time_sec": 212.09181690216064,
+          "total_tokens": 6400
+        }
+      },
+      "memory": {
+        "model_memory_mb": 12078.63330078125,
+        "inference_peak_mb": 12194.90478515625
+      }
+    }
+  }
+}

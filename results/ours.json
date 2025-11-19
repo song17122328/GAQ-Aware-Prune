@@ -1,0 +1,129 @@
+{
+  "model_path": "prune_log/ppl_search_20251118_005448_ratio_0.7_9.3_freeze_8/pytorch_model.bin",
+  "timestamp": "2025-11-19T16:22:05.109766",
+  "metrics": {
+    "model_info": {
+      "total_params": 6307975168,
+      "trainable_params": 1268789248,
+      "total_params_M": 6307.975168,
+      "total_params_B": 6.307975168,
+      "attention_params": 1216348160,
+      "mlp_params": 4040687616,
+      "attention_params_M": 1216.34816,
+      "mlp_params_M": 4040.687616,
+      "attention_ratio": 0.1928270368232369,
+      "mlp_ratio": 0.6405680917227098,
+      "num_layers": 32,
+      "model_size_mb": 12031.507934570312,
+      "model_size_gb": 11.74951946735382
+    },
+    "ppl": {
+      "wikitext2 (wikitext-2-raw-v1)": 38.457061767578125,
+      "ptb": 62.734867095947266
+    },
+    "zeroshot": {
+      "boolq": {
+        "accuracy": 0.6761467889908257,
+        "full_results": {
+          "alias": "boolq",
+          "acc,none": 0.6761467889908257,
+          "acc_stderr,none": 0.008184405497036853
+        }
+      },
+      "piqa": {
+        "accuracy": 0.7034820457018498,
+        "full_results": {
+          "alias": "piqa",
+          "acc,none": 0.7029379760609358,
+          "acc_stderr,none": 0.010661725404814675,
+          "acc_norm,none": 0.7034820457018498,
+          "acc_norm_stderr,none": 0.010656078922661127
+        }
+      },
+      "hellaswag": {
+        "accuracy": 0.48844851623182634,
+        "full_results": {
+          "alias": "hellaswag",
+          "acc,none": 0.37343158733320053,
+          "acc_stderr,none": 0.0048272666621441305,
+          "acc_norm,none": 0.48844851623182634,
+          "acc_norm_stderr,none": 0.004988449593007156
+        }
+      },
+      "winogrande": {
+        "accuracy": 0.5643251775848461,
+        "full_results": {
+          "alias": "winogrande",
+          "acc,none": 0.5643251775848461,
+          "acc_stderr,none": 0.013935709739615816
+        }
+      },
+      "arc_easy": {
+        "accuracy": 0.6035353535353535,
+        "full_results": {
+          "alias": "arc_easy_local",
+          "acc,none": 0.6590909090909091,
+          "acc_stderr,none": 0.009726579593423981,
+          "acc_norm,none": 0.6035353535353535,
+          "acc_norm_stderr,none": 0.010037412763064506
+        }
+      },
+      "arc_challenge": {
+        "accuracy": 0.34215017064846415,
+        "full_results": {
+          "alias": "arc_challenge_local",
+          "acc,none": 0.3122866894197952,
+          "acc_stderr,none": 0.013542598541688069,
+          "acc_norm,none": 0.34215017064846415,
+          "acc_norm_stderr,none": 0.013864152159177238
+        }
+      },
+      "openbookqa": {
+        "accuracy": 0.324,
+        "full_results": {
+          "alias": "openbookqa",
+          "acc,none": 0.204,
+          "acc_stderr,none": 0.01803936910413861,
+          "acc_norm,none": 0.324,
+          "acc_norm_stderr,none": 0.020950557312477552
+        }
+      }
+    },
+    "avg_zeroshot_acc": 0.5288697218133094,
+    "efficiency": {
+      "model_info": {
+        "total_params": 6307975168,
+        "trainable_params": 1268789248,
+        "total_params_M": 6307.975168,
+        "total_params_B": 6.307975168,
+        "attention_params": 1216348160,
+        "mlp_params": 4040687616,
+        "attention_params_M": 1216.34816,
+        "mlp_params_M": 4040.687616,
+        "attention_ratio": 0.1928270368232369,
+        "mlp_ratio": 0.6405680917227098,
+        "num_layers": 32,
+        "model_size_mb": 12031.507934570312,
+        "model_size_gb": 11.74951946735382
+      },
+      "speed": {
+        "batch_size_1": {
+          "throughput_tokens_per_sec": 29.128457354071767,
+          "latency_ms_per_token": 34.33068864047527,
+          "total_time_sec": 219.71640729904175,
+          "total_tokens": 6400
+        },
+        "batch_size_4": {
+          "throughput_tokens_per_sec": 110.6821247664539,
+          "latency_ms_per_token": 9.034882571237782,
+          "total_time_sec": 55.51031851768494,
+          "total_tokens": 6144
+        }
+      },
+      "memory": {
+        "model_memory_mb": 22145.13330078125,
+        "inference_peak_mb": 22261.40478515625
+      }
+    }
+  }
+}
