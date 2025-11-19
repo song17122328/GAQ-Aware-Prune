@@ -82,11 +82,20 @@ def evaluate_efficiency(
             else:
                 raise
 
+        # 每次速度测试后清理缓存
+        gc.collect()
+        torch.cuda.empty_cache()
+
     results['speed'] = speed_results
 
     # 3. 显存占用
     if device.startswith('cuda'):
         print(f"\n3. 显存占用:")
+
+        # 彻底清理之前测试的残留，确保内存测量准确
+        gc.collect()
+        torch.cuda.empty_cache()
+
         memory_results = measure_memory_usage(model, tokenizer, device=device)
         results['memory'] = memory_results
 
