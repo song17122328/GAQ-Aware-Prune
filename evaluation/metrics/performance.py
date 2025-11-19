@@ -103,6 +103,10 @@ def evaluate_zeroshot(
         import os
         use_local_tasks = False
 
+        # 设置离线模式，优先从本地缓存加载数据集
+        os.environ['HF_DATASETS_OFFLINE'] = '1'
+        print("已设置离线模式，优先从本地缓存加载数据集...")
+
         # PIQA: 使用官方 HuggingFace 版本（本地版本存在问题）
         # 如果需要使用本地版本，可以手动将 'piqa' 替换为 'piqa_local'
 
@@ -209,14 +213,18 @@ def evaluate_zeroshot(
 
                 print(f"  ✓ {result_task_name}: {acc*100:.2f}%" if acc is not None else f"  ✓ {result_task_name}: N/A")
 
+        # 恢复环境变量
+        os.environ.pop('HF_DATASETS_OFFLINE', None)
         return summary
 
     except ImportError:
+        os.environ.pop('HF_DATASETS_OFFLINE', None)
         print("✗ lm-eval未安装")
         print("请安装: pip install lm-eval")
         return None
 
     except Exception as e:
+        os.environ.pop('HF_DATASETS_OFFLINE', None)
         print(f"✗ 评估失败: {e}")
         import traceback
         traceback.print_exc()
