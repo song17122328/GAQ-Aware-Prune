@@ -129,29 +129,24 @@ class PPLMetric:
         # WikiText2
         if dataset_name_lower in ['wikitext', 'wikitext2', 'wikitext-2']:
             import os
-            from datasets import load_from_disk
 
-            # 优先从本地缓存加载
-            local_wikitext_path = os.path.expanduser("~/.cache/huggingface/datasets/wikitext___wikitext-2-raw-v1")
-            if os.path.exists(local_wikitext_path):
-                print(f"  从本地缓存加载 WikiText2: {local_wikitext_path}")
-                try:
-                    dataset = load_from_disk(local_wikitext_path)
-                    dataset = dataset['test']
-                    text_field = 'text'
-                except Exception as e:
-                    print(f"  本地加载失败: {e}，尝试在线加载...")
-                    dataset = None
-            else:
-                dataset = None
-
-            # 如果本地没有，尝试在线加载
-            if dataset is None:
+            # 首先尝试从本地缓存加载（离线模式）
+            os.environ['HF_DATASETS_OFFLINE'] = '1'
+            try:
+                dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
+                print("  从本地缓存加载成功")
+            except Exception as e:
+                print(f"  本地缓存未找到，尝试在线下载...")
+                # 切换到在线模式
+                os.environ.pop('HF_DATASETS_OFFLINE', None)
                 try:
                     dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
-                    text_field = 'text'
-                except Exception as e:
-                    raise ValueError(f"无法加载 WikiText2: {e}")
+                except Exception as e2:
+                    raise ValueError(f"无法加载 WikiText2: {e2}")
+            finally:
+                # 恢复环境变量
+                os.environ.pop('HF_DATASETS_OFFLINE', None)
+            text_field = 'text'
 
         # PTB (Penn TreeBank)
         elif dataset_name_lower in ['ptb', 'penn-treebank', 'penn_treebank']:
