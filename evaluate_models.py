@@ -23,8 +23,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 # 添加当前目录到路径
 sys.path.insert(0, os.path.dirname(__file__))
 
-from LLMPruner.evaluator.ppl import PPLMetric
-from LLMPruner.utils.get_best_gpu import get_best_gpu
+from evaluation.metrics.ppl import PPLMetric
+from core.utils.get_best_gpu import get_best_gpu
 
 
 def load_model(model_path, model_type='huggingface', device='cuda'):

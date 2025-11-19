@@ -1,11 +1,11 @@
-# LLMPruner 工具模块
+# core 工具模块
 
 LLM剪枝所需的辅助工具模块集合。
 
 ## 模块结构
 
 ```
-LLMPruner/
+core/
 ├── __init__.py
 ├── datasets/              # 数据集加载模块
 │   ├── __init__.py
@@ -25,7 +25,7 @@ LLMPruner/
 #### 加载样本数据用于梯度计算
 
 ```python
-from LLMPruner.datasets.example_samples import get_examples
+from core.datasets.example_samples import get_examples
 from transformers import AutoTokenizer
 
 tokenizer = AutoTokenizer.from_pretrained("/newdata/LLMs/Llama-3-8B-Instruct")
@@ -46,13 +46,13 @@ loss = model(examples, labels=examples).loss
 
 ```python
 # 从自定义文本创建样本
-from LLMPruner.datasets.example_samples import get_examples_from_text
+from core.datasets.example_samples import get_examples_from_text
 
 texts = ["Hello world", "This is a test"]
 examples = get_examples_from_text(texts, tokenizer, seq_len=128)
 
 # 获取校准数据（用于量化）
-from LLMPruner.datasets.example_samples import get_calibration_data
+from core.datasets.example_samples import get_calibration_data
 
 calib_data = get_calibration_data('wikitext', tokenizer, num_samples=128)
 ```
@@ -62,7 +62,7 @@ calib_data = get_calibration_data('wikitext', tokenizer, num_samples=128)
 #### 计算困惑度 (Perplexity)
 
 ```python
-from LLMPruner.evaluator.ppl import PPLMetric
+from evaluation.metrics.ppl import PPLMetric
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 model = AutoModelForCausalLM.from_pretrained("/newdata/LLMs/Llama-3-8B-Instruct")
@@ -93,7 +93,7 @@ ppl = ppl_metric.get('wikitext2 (wikitext-2-raw-v1)', 'N/A')
 #### 快捷函数
 
 ```python
-from LLMPruner.evaluator.ppl import evaluate_perplexity
+from evaluation.metrics.ppl import evaluate_perplexity
 
 # 评估单个数据集
 ppl = evaluate_perplexity(model, tokenizer, 'wikitext2', seq_len=128)
@@ -105,7 +105,7 @@ print(f"PPL: {ppl:.2f}")
 #### 日志工具
 
 ```python
-from LLMPruner.utils.logger import LoggerWithDepth
+from core.utils.logger import LoggerWithDepth
 
 logger = LoggerWithDepth(
     env_name='my_experiment',
@@ -126,7 +126,7 @@ logger.log(f"参数: {config}")
 #### GPU选择工具
 
 ```python
-from LLMPruner.utils.get_best_gpu import get_best_gpu
+from core.utils.get_best_gpu import get_best_gpu
 
 # 自动选择显存最多的GPU
 gpu_id = get_best_gpu()
@@ -145,10 +145,10 @@ pip install torch transformers datasets tqdm numpy matplotlib
 
 ```bash
 # 测试数据集加载
-python LLMPruner/datasets/example_samples.py
+python core/datasets/example_samples.py
 
 # 测试PPL评估
-python LLMPruner/evaluator/ppl.py
+python -c "from evaluation.metrics.ppl import PPLMetric"
 ```
 
 ## 使用示例
@@ -157,8 +157,8 @@ python LLMPruner/evaluator/ppl.py
 
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from LLMPruner.datasets.example_samples import get_examples
-from LLMPruner.evaluator.ppl import PPLMetric
+from core.datasets.example_samples import get_examples
+from evaluation.metrics.ppl import PPLMetric
 
 # 1. 加载模型
 model = AutoModelForCausalLM.from_pretrained("/newdata/LLMs/Llama-3-8B-Instruct")

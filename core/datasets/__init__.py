@@ -1,5 +1,5 @@
 """
-LLMPruner datasets module
+Core datasets module
 数据集加载和处理工具
 """
 

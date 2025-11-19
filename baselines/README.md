@@ -92,7 +92,7 @@ class MyPruner(BasePruner):
 ### 实现步骤
 
 1. **阅读骨架文件**：每个方法文件包含详细的实现说明
-2. **参考现有代码**：`LLMPruner/methods/gqa_aware.py` 有完整的 GQA 感知实现
+2. **参考现有代码**：`core/methods/gqa_aware.py` 有完整的 GQA 感知实现
 3. **保持 GQA 兼容**：确保剪枝后 Q:KV 比例为 4:1
 4. **更新状态**：实现完成后在 `methods/__init__.py` 中更新状态
 

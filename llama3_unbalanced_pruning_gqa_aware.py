@@ -20,7 +20,7 @@ import argparse
 import numpy as np
 from transformers import AutoTokenizer, LlamaForCausalLM
 
-from LLMPruner import (
+from core import (
     # 剪枝方法
     compute_gqa_group_importance,
     select_gqa_groups_to_prune,
@@ -223,7 +223,7 @@ def main():
 
     # 自动选择最优 GPU
     try:
-        from LLMPruner.utils.get_best_gpu import get_best_gpu
+        from core.utils.get_best_gpu import get_best_gpu
         device = f"cuda:{get_best_gpu()}"
     except:
         device = "cuda:0"

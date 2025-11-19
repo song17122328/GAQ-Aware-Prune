@@ -13,7 +13,7 @@ import os
 import torch
 from typing import Dict, List, Optional, Union
 
-# 添加LLMPruner到路径
+# 添加项目路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 
@@ -37,7 +37,7 @@ def evaluate_ppl(
     Returns:
         {dataset_name: ppl_value}
     """
-    from LLMPruner.evaluator.ppl import PPLMetric
+    from evaluation.metrics.ppl import PPLMetric
 
     print(f"\n{'='*60}")
     print(f"评估 PPL (seq_len={seq_len})")

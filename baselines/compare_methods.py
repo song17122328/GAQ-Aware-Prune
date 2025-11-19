@@ -23,9 +23,9 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from baselines.methods import get_pruner, AVAILABLE_METHODS
-from LLMPruner.utils.logger import LoggerWithDepth
-from LLMPruner.datasets.example_samples import get_examples
-from LLMPruner.evaluator.ppl import PPLMetric
+from core.utils.logger import LoggerWithDepth
+from core.datasets.example_samples import get_examples
+from evaluation.metrics.ppl import PPLMetric
 
 
 def parse_args():

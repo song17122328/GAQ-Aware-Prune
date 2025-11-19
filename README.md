@@ -851,7 +851,7 @@ GAQ-Aware-Prune/
 ├── README.md                               # 本文档
 ├── CLAUDE.md                               # AI助手开发指南
 ├── PARAMETERS_GUIDE.md                     # 参数选择详细指南
-└── LLMPruner/                              # 剪枝库
+└── core/                              # 剪枝库
     ├── methods/                            # 剪枝方法（GQA-aware）
     ├── importance/                         # 重要性分析（层级+头级）
     ├── evaluator/                          # 模型评估（PPL等）

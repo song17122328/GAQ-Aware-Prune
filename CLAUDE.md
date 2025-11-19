@@ -63,7 +63,7 @@ GAQ-Aware-Prune/
 ├── search_optimal_distribution.py                # Auto-search for optimal Attention:MLP ratio
 ├── test_finetuning.py                            # Standalone fine-tuning test
 │
-├── LLMPruner/                                    # Core pruning library
+├── core/                                    # Core pruning library
 │   ├── __init__.py                               # Package exports
 │   ├── README.md                                 # Module documentation
 │   │
@@ -136,11 +136,11 @@ Output directories (gitignored):
 | `search_optimal_distribution.py` | Auto-search for optimal Attention:MLP distribution | Modify search strategy, add search parameters |
 | `diagnose_model.py` | Model health diagnostics | Add new diagnostic checks |
 | `evaluate_models.py` | Compare multiple models | Add comparison metrics |
-| `LLMPruner/methods/gqa_aware.py` | GQA-aware pruning algorithm | Change importance calculation, modify pruning logic |
-| `LLMPruner/importance/layer_analyzer.py` | Layer importance evaluation | Add new importance metrics |
-| `LLMPruner/trainer/finetuner.py` | Post-pruning fine-tuning (full + LoRA) | Modify training loop, add optimizers |
-| `LLMPruner/evaluator/ppl.py` | Perplexity evaluation | Add new evaluation metrics |
-| `LLMPruner/datasets/example_samples.py` | Data loading | Add new datasets |
+| `core/methods/gqa_aware.py` | GQA-aware pruning algorithm | Change importance calculation, modify pruning logic |
+| `core/importance/layer_analyzer.py` | Layer importance evaluation | Add new importance metrics |
+| `core/trainer/finetuner.py` | Post-pruning fine-tuning (full + LoRA) | Modify training loop, add optimizers |
+| `evaluation/metrics/ppl.py` | Perplexity evaluation | Add new evaluation metrics |
+| `core/datasets/example_samples.py` | Data loading | Add new datasets |
 | `evaluation/run_evaluation.py` | Unified evaluation suite | Add new evaluation modes |
 | `evaluation/convert_checkpoint_to_hf.py` | Checkpoint format conversion | Modify conversion logic |
 
@@ -206,11 +206,11 @@ Not all layers are equally important:
 
 1. **Understanding the Codebase**
    - Read `RUN.md` for usage examples
-   - Read `LLMPruner/README.md` for module documentation
+   - Read `core/README.md` for module documentation
    - Review the main script: `llama3_unbalanced_pruning_gqa_aware.py`
 
 2. **Making Changes**
-   - Modify the appropriate module in `LLMPruner/`
+   - Modify the appropriate module in `core/`
    - Test changes with a small debug run (see "Running Experiments")
    - Update documentation if adding new features
 
@@ -295,7 +295,7 @@ def compute_importance(layer, method='taylor'):
 
 ### Module Organization
 
-Each module in `LLMPruner/` follows this pattern:
+Each module in `core/` follows this pattern:
 
 ```python
 # module_name/__init__.py
@@ -318,7 +318,7 @@ def public_function():
 Always use the logger provided by `LoggerWithDepth`:
 
 ```python
-from LLMPruner.utils.logger import LoggerWithDepth
+from core.utils.logger import LoggerWithDepth
 
 logger = LoggerWithDepth(
     env_name='experiment_name',
@@ -339,7 +339,7 @@ logger.log(f"Layer {i}: importance = {importance:.4f}")
 
 ## Key Modules
 
-### 1. `LLMPruner.methods.gqa_aware`
+### 1. `core.methods.gqa_aware`
 
 **Purpose**: GQA-aware Taylor importance calculation and pruning
 
@@ -361,7 +361,7 @@ prune_attention_by_gqa_groups(layer, keep_kv_indices, head_dim=128, gqa_ratio=4)
 - Modifying pruning granularity
 - Adding support for different GQA ratios
 
-### 2. `LLMPruner.importance.layer_analyzer`
+### 2. `core.importance.layer_analyzer`
 
 **Purpose**: Evaluate layer-wise importance for unbalanced pruning
 
@@ -389,7 +389,7 @@ UnbalancedStructuredPruningCalculator(layer_importance, num_layers)
 - Changing pruning rate distribution strategy
 - Modifying visualization
 
-### 3. `LLMPruner.trainer.finetuner`
+### 3. `core.trainer.finetuner`
 
 **Purpose**: Fine-tune pruned models to recover performance (full-parameter or LoRA)
 
@@ -421,7 +421,7 @@ FineTuner(model, tokenizer, device='cuda', logger=None)
 - Adding gradient clipping or other training tricks
 - Modifying LoRA configuration (target modules, rank, etc.)
 
-### 4. `LLMPruner.evaluator.ppl`
+### 4. `evaluation.metrics.ppl`
 
 **Purpose**: Evaluate model perplexity on standard benchmarks
 
@@ -437,7 +437,7 @@ PPLMetric(model, tokenizer, datasets=['wikitext2'], seq_len=128, device='cuda')
 - Adding new evaluation datasets
 - Implementing other metrics (accuracy, BLEU, etc.)
 
-### 5. `LLMPruner.datasets.example_samples`
+### 5. `core.datasets.example_samples`
 
 **Purpose**: Load samples for gradient computation
 
@@ -761,7 +761,7 @@ After running pruning, verify:
 
 ### Task 1: Add a New Importance Metric
 
-**Location**: `LLMPruner/methods/gqa_aware.py`
+**Location**: `core/methods/gqa_aware.py`
 
 **Steps**:
 1. Add new function:
@@ -789,7 +789,7 @@ After running pruning, verify:
 
 ### Task 2: Add Support for New Dataset
 
-**Location**: `LLMPruner/datasets/example_samples.py`
+**Location**: `core/datasets/example_samples.py`
 
 **Steps**:
 1. Add dataset loading logic:
@@ -803,11 +803,11 @@ After running pruning, verify:
        # ... rest of function
    ```
 
-2. Update `LLMPruner/evaluator/ppl.py` if needed for evaluation
+2. Update `evaluation/metrics/ppl.py` if needed for evaluation
 
 ### Task 3: Modify Pruning Strategy
 
-**Location**: `LLMPruner/importance/layer_analyzer.py`
+**Location**: `core/importance/layer_analyzer.py`
 
 **Steps**:
 1. Add new strategy in `UnbalancedStructuredPruningCalculator`:
@@ -1140,7 +1140,7 @@ torch.save(quantized_model.state_dict(), 'pruned_quantized.bin')
 
 1. **Start with the main script**: `llama3_unbalanced_pruning_gqa_aware.py` orchestrates everything
 2. **Understand the pipeline**: Read through steps 1-11 in the main script
-3. **Check module docs**: `LLMPruner/README.md` and individual `__init__.py` files
+3. **Check module docs**: `core/README.md` and individual `__init__.py` files
 4. **Look at RUN.md**: Contains real-world usage examples
 
 ### When Modifying Code
@@ -1235,11 +1235,11 @@ python diagnose_model.py \
 | Main entry point | `llama3_unbalanced_pruning_gqa_aware.py` |
 | Auto-search script | `search_optimal_distribution.py` |
 | Model diagnostics | `diagnose_model.py` |
-| GQA pruning logic | `LLMPruner/methods/gqa_aware.py` |
-| Layer importance | `LLMPruner/importance/layer_analyzer.py` |
-| Fine-tuning (full + LoRA) | `LLMPruner/trainer/finetuner.py` |
-| Perplexity evaluation | `LLMPruner/evaluator/ppl.py` |
-| Data loading | `LLMPruner/datasets/example_samples.py` |
+| GQA pruning logic | `core/methods/gqa_aware.py` |
+| Layer importance | `core/importance/layer_analyzer.py` |
+| Fine-tuning (full + LoRA) | `core/trainer/finetuner.py` |
+| Perplexity evaluation | `evaluation/metrics/ppl.py` |
+| Data loading | `core/datasets/example_samples.py` |
 | Advanced evaluation suite | `evaluation/run_evaluation.py` |
 | Checkpoint converter | `evaluation/convert_checkpoint_to_hf.py` |
 | Parameter guide | `PARAMETERS_GUIDE.md` |
@@ -1275,7 +1275,7 @@ For more details, refer to:
 - `README.md` - Project overview and quick start
 - `PARAMETERS_GUIDE.md` - Detailed parameter selection guide
 - `SEARCH_EXAMPLE.md` - Auto-search usage examples
-- `LLMPruner/README.md` - Module-level documentation
+- `core/README.md` - Module-level documentation
 - `evaluation/README.md` - Evaluation suite documentation
 - `evaluation/QUICKSTART.md` - Quick start for evaluation
 

@@ -21,8 +21,8 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from baselines.methods import get_pruner, list_methods, AVAILABLE_METHODS
-from LLMPruner.utils.logger import LoggerWithDepth
-from LLMPruner.datasets.example_samples import get_examples
+from core.utils.logger import LoggerWithDepth
+from core.datasets.example_samples import get_examples
 
 
 def parse_args():
@@ -160,7 +160,7 @@ def main():
     # 评估 PPL
     if args.test_after_prune:
         logger.log("\n评估剪枝后 PPL...")
-        from LLMPruner.evaluator.ppl import PPLMetric
+        from evaluation.metrics.ppl import PPLMetric
 
         pruned_model = pruner.get_pruned_model()
         ppl_metric = PPLMetric(

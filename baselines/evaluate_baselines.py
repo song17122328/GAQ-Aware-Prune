@@ -123,7 +123,7 @@ def evaluate_ppl(checkpoint_path: str, datasets: List[str],
                  seq_len: int, device: str) -> Dict[str, float]:
     """评估 PPL"""
     from evaluation.utils.model_loader import load_model_and_tokenizer
-    from LLMPruner.evaluator.ppl import PPLMetric
+    from evaluation.metrics.ppl import PPLMetric
 
     model, tokenizer = load_model_and_tokenizer(checkpoint_path, device=device)
 

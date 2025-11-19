@@ -56,7 +56,7 @@ cp lstm/data/ptb.test.txt ~/.cache/huggingface/datasets/ptb_manual/
 #### 方案C：使用替代数据集
 如果PTB必需，可使用以下替代：
 ```python
-# 修改 LLMPruner/evaluator/ppl.py
+# 修改 evaluation/metrics/ppl.py
 # 使用 'lambada' 作为PTB替代
 dataset = load_dataset('lambada', split='test')
 ```

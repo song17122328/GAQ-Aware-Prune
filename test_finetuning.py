@@ -17,9 +17,9 @@ from transformers import AutoTokenizer
 # 添加当前目录到路径
 sys.path.insert(0, os.path.dirname(__file__))
 
-from LLMPruner.trainer.finetuner import FineTuner
-from LLMPruner.evaluator.ppl import PPLMetric
-from LLMPruner.utils.logger import LoggerWithDepth
+from core.trainer.finetuner import FineTuner
+from evaluation.metrics.ppl import PPLMetric
+from core.utils.logger import LoggerWithDepth
 
 
 def main():
