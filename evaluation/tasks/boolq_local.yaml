@@ -1,0 +1,20 @@
+dataset_kwargs:
+  data_files:
+    validation: /data/home/yuanxiaosong/GAQ-Aware-Prune/data/zeroshot/boolq/validation.jsonl
+dataset_path: json
+doc_to_choice:
+- 'no'
+- 'yes'
+doc_to_target: '{% if answer %}1{% else %}0{% endif %}'
+doc_to_text: '{{passage}}
+
+  Question: {{question}}?
+
+  Answer:'
+metric_list:
+- aggregation: mean
+  higher_is_better: true
+  metric: acc
+output_type: multiple_choice
+task: boolq_local
+validation_split: validation

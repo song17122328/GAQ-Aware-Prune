@@ -1,0 +1,16 @@
+dataset_kwargs:
+  data_files:
+    validation: /data/home/yuanxiaosong/GAQ-Aware-Prune/data/zeroshot/winogrande/validation.jsonl
+dataset_path: json
+doc_to_choice:
+- '{{option1}}'
+- '{{option2}}'
+doc_to_target: '{% if answer == "1" %}0{% else %}1{% endif %}'
+doc_to_text: '{{sentence}}'
+metric_list:
+- aggregation: mean
+  higher_is_better: true
+  metric: acc
+output_type: multiple_choice
+task: winogrande_local
+validation_split: validation

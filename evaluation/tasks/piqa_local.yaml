@@ -1,0 +1,21 @@
+dataset_kwargs:
+  data_files:
+    validation: /data/home/yuanxiaosong/GAQ-Aware-Prune/data/zeroshot/piqa/validation.jsonl
+dataset_path: json
+doc_to_choice:
+- '{{sol1}}'
+- '{{sol2}}'
+doc_to_target: '{{label}}'
+doc_to_text: 'Question: {{goal}}
+
+  Answer:'
+metric_list:
+- aggregation: mean
+  higher_is_better: true
+  metric: acc
+- aggregation: mean
+  higher_is_better: true
+  metric: acc_norm
+output_type: multiple_choice
+task: piqa_local
+validation_split: validation
