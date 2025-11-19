@@ -1,25 +1,22 @@
-# PIQA 本地任务配置
-# 注意：此文件为模板，实际数据路径在 piqa_local_task.py 中动态设置
-# 使用方法：确保已运行 python evaluation/download_datasets.py 下载数据
-
-task: piqa_local
-group: commonsense_reasoning
-dataset_path: json
 dataset_kwargs:
-  # 这些路径会被 piqa_local_task.py 动态替换
   data_files:
-    validation: validation.jsonl
-output_type: multiple_choice
-validation_split: validation
-doc_to_text: "Question: {{goal}}\nAnswer:"
-doc_to_target: "{{label}}"
+    validation: /data/home/yuanxiaosong/GAQ-Aware-Prune/data/zeroshot/piqa/validation.jsonl
+dataset_path: json
 doc_to_choice:
-  - "{{sol1}}"
-  - "{{sol2}}"
+- '{{sol1}}'
+- '{{sol2}}'
+doc_to_target: '{{label}}'
+doc_to_text: 'Question: {{goal}}
+
+  Answer:'
+group: commonsense_reasoning
 metric_list:
-  - metric: acc
-    aggregation: mean
-    higher_is_better: true
-  - metric: acc_norm
-    aggregation: mean
-    higher_is_better: true
+- aggregation: mean
+  higher_is_better: true
+  metric: acc
+- aggregation: mean
+  higher_is_better: true
+  metric: acc_norm
+output_type: multiple_choice
+task: piqa_local
+validation_split: validation
