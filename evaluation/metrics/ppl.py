@@ -129,20 +129,17 @@ class PPLMetric:
         # WikiText2
         if dataset_name_lower in ['wikitext', 'wikitext2', 'wikitext-2']:
             import os
-            import glob
-            from datasets import Dataset
+            from datasets import load_from_disk
 
-            # 从本地缓存加载 arrow 文件
-            cache_dir = os.path.expanduser("~/.cache/huggingface/datasets/wikitext")
-            arrow_pattern = os.path.join(cache_dir, "wikitext-2-raw-v1", "*", "*test*.arrow")
-            arrow_files = glob.glob(arrow_pattern)
+            # 优先从项目 data/ 目录加载
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            local_path = os.path.join(project_root, "data", "wikitext2")
 
-            if arrow_files:
-                # 使用最新的 arrow 文件
-                arrow_file = sorted(arrow_files)[-1]
-                print(f"  从本地缓存加载: {arrow_file}")
+            if os.path.exists(local_path):
+                print(f"  从本地加载: {local_path}")
                 try:
-                    dataset = Dataset.from_file(arrow_file)
+                    dataset = load_from_disk(local_path)
+                    dataset = dataset['test']
                     text_field = 'text'
                 except Exception as e:
                     print(f"  本地加载失败: {e}，尝试在线下载...")
@@ -152,6 +149,7 @@ class PPLMetric:
 
             # 如果本地没有，尝试在线加载
             if dataset is None:
+                print("  本地数据不存在，请先运行: python evaluation/download_datasets.py")
                 try:
                     dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
                     text_field = 'text'
@@ -163,75 +161,60 @@ class PPLMetric:
             import os
             from datasets import load_from_disk
 
-            # 优先尝试从本地缓存加载
-            local_ptb_path = os.path.expanduser("~/.cache/huggingface/datasets/ptb_text_only")
-            if os.path.exists(local_ptb_path):
-                print(f"  从本地缓存加载 PTB: {local_ptb_path}")
+            # 优先从项目 data/ 目录加载
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            local_path = os.path.join(project_root, "data", "ptb")
+
+            if os.path.exists(local_path):
+                print(f"  从本地加载: {local_path}")
                 try:
-                    dataset = load_from_disk(local_ptb_path)
+                    dataset = load_from_disk(local_path)
                     dataset = dataset['test']
                     text_field = 'sentence'
                 except Exception as e:
-                    print(f"  本地加载失败: {e}，尝试在线加载...")
+                    print(f"  本地加载失败: {e}，尝试在线下载...")
                     dataset = None
             else:
                 dataset = None
 
             # 如果本地没有，尝试在线加载
             if dataset is None:
+                print("  本地数据不存在，请先运行: python evaluation/download_datasets.py --datasets ptb")
                 try:
-                    # 尝试多个可能的PTB数据集来源
-                    try:
-                        dataset = load_dataset('ptb_text_only', 'penn_treebank', split='test')
-                        text_field = 'sentence' if 'sentence' in dataset.column_names else 'text'
-                    except:
-                        # 备选方案
-                        dataset = load_dataset('ptb-text-only', split='test')
-                        text_field = 'sentence' if 'sentence' in dataset.column_names else 'text'
+                    dataset = load_dataset('ptb_text_only', 'penn_treebank', split='test')
+                    text_field = 'sentence' if 'sentence' in dataset.column_names else 'text'
                 except Exception as e:
-                    raise ValueError(
-                        f"无法加载PTB数据集: {e}\n"
-                        f"建议：运行 python evaluation/preload_ptb.py 下载数据集"
-                    )
+                    raise ValueError(f"无法加载 PTB: {e}")
 
         # C4
         elif dataset_name_lower in ['c4']:
             import os
             from datasets import load_from_disk
 
-            # 优先从本地缓存加载
-            local_c4_path = os.path.expanduser("~/.cache/huggingface/datasets/c4_local")
-            if os.path.exists(local_c4_path):
-                print(f"  从本地缓存加载 C4: {local_c4_path}")
+            # 优先从项目 data/ 目录加载
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            local_path = os.path.join(project_root, "data", "c4")
+
+            if os.path.exists(local_path):
+                print(f"  从本地加载: {local_path}")
                 try:
-                    dataset = load_from_disk(local_c4_path)
-                    if 'validation' in dataset:
-                        dataset = dataset['validation']
+                    dataset = load_from_disk(local_path)
                     text_field = 'text'
                 except Exception as e:
-                    print(f"  本地加载失败: {e}，尝试在线加载...")
+                    print(f"  本地加载失败: {e}，尝试在线下载...")
                     dataset = None
             else:
                 dataset = None
 
             # 如果本地没有，尝试在线加载
             if dataset is None:
+                print("  本地数据不存在，请先运行: python evaluation/download_datasets.py --datasets c4")
                 try:
-                    print("  注意：C4数据集较大，只加载validation集的前10000个样本")
-                    try:
-                        dataset = load_dataset('allenai/c4', 'en', split='validation', streaming=False, trust_remote_code=True)
-                    except:
-                        dataset = load_dataset('c4', 'en', split='validation', streaming=False, trust_remote_code=True)
-                    # 只取前10000个样本以加速
-                    if hasattr(dataset, 'select'):
-                        dataset = dataset.select(range(min(10000, len(dataset))))
+                    dataset = load_dataset('allenai/c4', 'en', split='validation', streaming=False, trust_remote_code=True)
+                    dataset = dataset.select(range(min(10000, len(dataset))))
                     text_field = 'text'
                 except Exception as e:
-                    raise ValueError(
-                        f"无法加载C4数据集: {e}\n"
-                        f"建议：使用wikitext2替代（C4数据集体积大且下载慢）\n"
-                        f"或手动下载：见 evaluation/docs/dataset_download.md"
-                    )
+                    raise ValueError(f"无法加载 C4: {e}")
 
         else:
             raise ValueError(
