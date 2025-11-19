@@ -85,8 +85,15 @@ def evaluate_single_model(
     print(f"评估模型: {model_path}")
     print(f"{'='*80}")
 
+    # 初始化模型变量
+    model = None
+    tokenizer = None
+
     # 根据需要的指标决定是否加载模型
+    # 自定义 zeroshot 评估也需要模型
     need_model = any(m in metrics for m in ['ppl', 'speed', 'memory', 'efficiency'])
+    if 'zeroshot' in metrics and use_custom_zeroshot:
+        need_model = True
 
     if need_model:
         # 加载模型
