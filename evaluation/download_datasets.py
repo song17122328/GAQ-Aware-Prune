@@ -221,8 +221,9 @@ def download_piqa_from_official(save_dir: str):
 
 
 def download_zeroshot_datasets(save_dir: str):
-    """下载 Zero-shot 评估所需的 7 个数据集到本地缓存"""
+    """下载 Zero-shot 评估所需的 7 个数据集到本地，保存为 jsonl 格式"""
     from datasets import load_dataset
+    import json
 
     print("\n" + "="*50)
     print("下载 Zero-shot 评估数据集 (7个)")
@@ -232,19 +233,6 @@ def download_zeroshot_datasets(save_dir: str):
     zeroshot_dir = os.path.join(save_dir, "zeroshot")
     os.makedirs(zeroshot_dir, exist_ok=True)
 
-    # 设置环境变量，让数据集下载到指定目录
-    os.environ['HF_DATASETS_CACHE'] = zeroshot_dir
-
-    # Zero-shot 任务对应的数据集 (不包括 piqa，单独处理)
-    ZEROSHOT_DATASETS = {
-        'boolq': ('google/boolq', None),
-        'hellaswag': ('Rowan/hellaswag', None),
-        'winogrande': ('winogrande', 'winogrande_xl'),
-        'arc_easy': ('allenai/ai2_arc', 'ARC-Easy'),
-        'arc_challenge': ('allenai/ai2_arc', 'ARC-Challenge'),
-        'openbookqa': ('allenai/openbookqa', 'main'),
-    }
-
     # 先处理 piqa (从官方源下载)
     try:
         print(f"  下载 piqa (从官方 GitHub)...")
@@ -253,27 +241,50 @@ def download_zeroshot_datasets(save_dir: str):
     except Exception as e:
         print(f"    ✗ 失败: {e}")
 
-    # 下载其他数据集
-    for task_name, (dataset_name, config) in ZEROSHOT_DATASETS.items():
+    # Zero-shot 任务对应的数据集配置
+    # 格式: task_name -> (hf_dataset, config, validation_split, fields_to_save)
+    ZEROSHOT_DATASETS = {
+        'boolq': ('google/boolq', None, 'validation', ['question', 'passage', 'answer']),
+        'hellaswag': ('Rowan/hellaswag', None, 'validation', ['ctx', 'ctx_a', 'ctx_b', 'endings', 'label']),
+        'winogrande': ('winogrande', 'winogrande_xl', 'validation', ['sentence', 'option1', 'option2', 'answer']),
+        'arc_easy': ('allenai/ai2_arc', 'ARC-Easy', 'validation', ['question', 'choices', 'answerKey']),
+        'arc_challenge': ('allenai/ai2_arc', 'ARC-Challenge', 'validation', ['question', 'choices', 'answerKey']),
+        'openbookqa': ('allenai/openbookqa', 'main', 'validation', ['question_stem', 'choices', 'answerKey']),
+    }
+
+    # 下载并保存为 jsonl
+    for task_name, (dataset_name, config, val_split, fields) in ZEROSHOT_DATASETS.items():
+        task_dir = os.path.join(zeroshot_dir, task_name)
+        os.makedirs(task_dir, exist_ok=True)
+        jsonl_path = os.path.join(task_dir, "validation.jsonl")
+
+        # 如果已存在则跳过
+        if os.path.exists(jsonl_path):
+            print(f"  {task_name}: 已存在，跳过")
+            continue
+
         try:
             print(f"  下载 {task_name} ({dataset_name})...")
-            if config:
-                dataset = load_dataset(dataset_name, config, cache_dir=zeroshot_dir)
-            else:
-                dataset = load_dataset(dataset_name, cache_dir=zeroshot_dir)
 
-            # 显示数据集大小
-            if hasattr(dataset, 'num_rows'):
-                print(f"    ✓ 完成 ({dataset.num_rows} 样本)")
+            if config:
+                dataset = load_dataset(dataset_name, config, split=val_split)
             else:
-                total = sum(len(split) for split in dataset.values())
-                print(f"    ✓ 完成 ({total} 样本)")
+                dataset = load_dataset(dataset_name, split=val_split)
+
+            # 保存为 jsonl
+            with open(jsonl_path, 'w', encoding='utf-8') as f:
+                for item in dataset:
+                    # 只保留需要的字段
+                    row = {k: item[k] for k in fields if k in item}
+                    f.write(json.dumps(row, ensure_ascii=False) + '\n')
+
+            print(f"    ✓ 完成 ({len(dataset)} 样本) -> {jsonl_path}")
 
         except Exception as e:
             print(f"    ✗ 失败: {e}")
 
-    print(f"\n  数据集已缓存到: {zeroshot_dir}")
-    print(f"  评估时会自动从此目录加载")
+    print(f"\n  数据集已保存到: {zeroshot_dir}")
+    print(f"  每个任务都保存为 jsonl 格式，评估时从本地加载")
 
 
 def main():

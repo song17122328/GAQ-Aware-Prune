@@ -78,15 +78,16 @@ def evaluate_zeroshot(
         - 需要安装 lm-eval: pip install lm-eval
         - .bin文件会自动使用自定义加载器
     """
+    # 使用所有本地任务 (避免网络请求)
     if tasks is None:
         tasks = [
-            'boolq',          # 是非问答
-            'piqa_local',     # 物理常识 (使用本地数据)
-            'hellaswag',      # 常识推理
-            'winogrande',     # 代词消歧
-            'arc_easy',       # 科学问答（简单）
-            'arc_challenge',  # 科学问答（困难）
-            'openbookqa'      # 科学推理
+            'boolq_local',        # 是非问答
+            'piqa_local',         # 物理常识
+            'hellaswag_local',    # 常识推理
+            'winogrande_local',   # 代词消歧
+            'arc_easy_local',     # 科学问答（简单）
+            'arc_challenge_local', # 科学问答（困难）
+            'openbookqa_local'    # 科学推理
         ]
 
     print(f"\n{'='*60}")
@@ -97,29 +98,29 @@ def evaluate_zeroshot(
     try:
         import os
 
-        # 设置本地数据集缓存目录 (必须在 import lm_eval 之前)
+        # 设置离线模式 (必须在 import lm_eval 之前)
+        os.environ['HF_DATASETS_OFFLINE'] = '1'
+        os.environ['HF_HUB_OFFLINE'] = '1'
+
+        # 获取项目路径
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         local_cache_dir = os.path.join(project_root, "data", "zeroshot")
 
-        if os.path.exists(local_cache_dir):
-            print(f"设置本地数据集缓存: {local_cache_dir}")
-            os.environ['HF_DATASETS_CACHE'] = local_cache_dir
-            os.environ['HF_DATASETS_OFFLINE'] = '1'  # 强制离线模式
-            os.environ['HF_HUB_OFFLINE'] = '1'  # 禁止 HuggingFace Hub 网络请求
-        else:
-            print(f"警告: 本地数据集目录不存在: {local_cache_dir}")
+        if not os.path.exists(local_cache_dir):
+            print(f"错误: 本地数据集目录不存在: {local_cache_dir}")
             print("请先运行: python evaluation/download_datasets.py")
+            return None
+
+        # 生成本地任务的 YAML 配置文件
+        print("生成本地任务配置...")
+        from evaluation.tasks.local_tasks import generate_yaml_configs
+        tasks_dir = os.path.join(os.path.dirname(__file__), '..', 'tasks')
+        generate_yaml_configs(tasks_dir)
 
         # 导入 lm_eval (在设置环境变量之后)
         import lm_eval
         from lm_eval.models.huggingface import HFLM
         from lm_eval.tasks import TaskManager
-
-        # 启用本地任务 (piqa_local 等)
-        use_local_tasks = True
-
-        # 获取自定义任务目录
-        tasks_dir = os.path.join(os.path.dirname(__file__), '..', 'tasks')
 
         print("开始评估...")
 
@@ -147,11 +148,9 @@ def evaluate_zeroshot(
             eval_kwargs = {
                 "model": lm,
                 "tasks": tasks,
-                "log_samples": False
+                "log_samples": False,
+                "task_manager": TaskManager(include_path=tasks_dir)
             }
-            # 如果使用本地 PIQA，添加自定义任务目录
-            if use_local_tasks and os.path.exists(tasks_dir):
-                eval_kwargs["task_manager"] = TaskManager(include_path=tasks_dir)
 
             results = lm_eval.simple_evaluate(**eval_kwargs)
         else:
@@ -161,11 +160,9 @@ def evaluate_zeroshot(
                 "model_args": f"pretrained={model_path},dtype=float16,device={device}",
                 "tasks": tasks,
                 "batch_size": batch_size,
-                "log_samples": False
+                "log_samples": False,
+                "task_manager": TaskManager(include_path=tasks_dir)
             }
-            # 如果使用本地 PIQA，添加自定义任务目录
-            if use_local_tasks and os.path.exists(tasks_dir):
-                eval_kwargs["task_manager"] = TaskManager(include_path=tasks_dir)
 
             results = lm_eval.simple_evaluate(**eval_kwargs)
 
@@ -185,10 +182,7 @@ def evaluate_zeroshot(
                         acc = value
 
                 # 将本地任务名称映射回原始名称 (用于显示)
-                task_name_map = {
-                    'piqa_local': 'piqa',
-                }
-                result_task_name = task_name_map.get(task, task)
+                result_task_name = task.replace('_local', '')
 
                 summary[result_task_name] = {
                     'accuracy': acc,
