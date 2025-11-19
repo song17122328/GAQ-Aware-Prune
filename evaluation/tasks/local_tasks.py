@@ -36,7 +36,6 @@ def check_local_data_exists(task_name: str) -> bool:
 LOCAL_TASK_CONFIGS = {
     'boolq_local': {
         'task': 'boolq_local',
-        'group': 'commonsense_reasoning',
         'dataset_path': 'json',
         'output_type': 'multiple_choice',
         'validation_split': 'validation',
@@ -49,7 +48,6 @@ LOCAL_TASK_CONFIGS = {
     },
     'piqa_local': {
         'task': 'piqa_local',
-        'group': 'commonsense_reasoning',
         'dataset_path': 'json',
         'output_type': 'multiple_choice',
         'validation_split': 'validation',
@@ -63,7 +61,6 @@ LOCAL_TASK_CONFIGS = {
     },
     'hellaswag_local': {
         'task': 'hellaswag_local',
-        'group': 'commonsense_reasoning',
         'dataset_path': 'json',
         'output_type': 'multiple_choice',
         'validation_split': 'validation',
@@ -77,7 +74,6 @@ LOCAL_TASK_CONFIGS = {
     },
     'winogrande_local': {
         'task': 'winogrande_local',
-        'group': 'commonsense_reasoning',
         'dataset_path': 'json',
         'output_type': 'multiple_choice',
         'validation_split': 'validation',
@@ -90,7 +86,6 @@ LOCAL_TASK_CONFIGS = {
     },
     'arc_easy_local': {
         'task': 'arc_easy_local',
-        'group': 'commonsense_reasoning',
         'dataset_path': 'json',
         'output_type': 'multiple_choice',
         'validation_split': 'validation',
@@ -104,7 +99,6 @@ LOCAL_TASK_CONFIGS = {
     },
     'arc_challenge_local': {
         'task': 'arc_challenge_local',
-        'group': 'commonsense_reasoning',
         'dataset_path': 'json',
         'output_type': 'multiple_choice',
         'validation_split': 'validation',
@@ -118,7 +112,6 @@ LOCAL_TASK_CONFIGS = {
     },
     'openbookqa_local': {
         'task': 'openbookqa_local',
-        'group': 'commonsense_reasoning',
         'dataset_path': 'json',
         'output_type': 'multiple_choice',
         'validation_split': 'validation',
