@@ -27,6 +27,70 @@ from core.trainer.finetuner import FineTuner
 from core.utils.logger import LoggerWithDepth
 
 
+def collect_layer_activations(model, input_ids, device='cuda'):
+    """
+    收集每层的激活值用于 Wanda 方法
+
+    Returns:
+        activations: Dict[layer_idx -> Dict[name -> Tensor]]
+    """
+    activations = {}
+    hooks = []
+
+    def get_activation_hook(layer_idx, name):
+        def hook(module, input, output):
+            if layer_idx not in activations:
+                activations[layer_idx] = {}
+            # 存储输入激活值的平均值（用于 Wanda）
+            if isinstance(input, tuple):
+                act = input[0].detach()
+            else:
+                act = input.detach()
+            # 计算所有维度的平均（除了最后的特征维度）
+            if act.dim() > 1:
+                act = act.abs().mean(dim=tuple(range(act.dim() - 1)))
+            activations[layer_idx][name] = act.cpu()
+        return hook
+
+    # 为每层的关键模块注册 hooks
+    for layer_idx, layer in enumerate(model.model.layers):
+        # Attention 的输入激活
+        hooks.append(layer.self_attn.q_proj.register_forward_hook(
+            get_activation_hook(layer_idx, 'q_proj')))
+        hooks.append(layer.self_attn.k_proj.register_forward_hook(
+            get_activation_hook(layer_idx, 'k_proj')))
+        hooks.append(layer.self_attn.v_proj.register_forward_hook(
+            get_activation_hook(layer_idx, 'v_proj')))
+        hooks.append(layer.self_attn.o_proj.register_forward_hook(
+            get_activation_hook(layer_idx, 'o_proj')))
+
+        # MLP 的输入激活
+        hooks.append(layer.mlp.gate_proj.register_forward_hook(
+            get_activation_hook(layer_idx, 'mlp_input')))
+
+        # MLP 中间激活（用于 down_proj）
+        def get_mlp_intermediate_hook(layer_idx):
+            def hook(module, input, output):
+                if layer_idx not in activations:
+                    activations[layer_idx] = {}
+                act = output.detach().abs().mean(dim=tuple(range(output.dim() - 1)))
+                activations[layer_idx]['intermediate'] = act.cpu()
+            return hook
+
+        hooks.append(layer.mlp.up_proj.register_forward_hook(
+            get_mlp_intermediate_hook(layer_idx)))
+
+    # 执行前向传播
+    with torch.no_grad():
+        model(input_ids)
+
+    # 移除所有 hooks
+    for hook in hooks:
+        hook.remove()
+
+    return activations
+
+
 def apply_global_pruning(model, groups_to_prune_df, head_dim=128, gqa_ratio=4, logger=None):
     """
     根据全局分析表执行实际剪枝
@@ -215,8 +279,8 @@ def main():
     parser.add_argument('--pruning_ratio', type=float, default=0.25,
                        help='目标剪枝率（相对于模型总参数）')
     parser.add_argument('--importance_method', type=str, default='taylor',
-                       choices=['taylor', 'wanda'],
-                       help='重要性计算方法')
+                       choices=['taylor', 'wanda', 'taylor_2nd'],
+                       help='重要性计算方法: taylor(一阶), wanda(权重×激活), taylor_2nd(二阶)')
     parser.add_argument('--num_samples', type=int, default=128,
                        help='用于计算重要性的样本数')
     parser.add_argument('--gradient_batch_size', type=int, default=4,
@@ -342,9 +406,12 @@ def main():
         baseline_ppl = PPLMetric(model, tokenizer, datasets=['wikitext2'], device=args.device)
         logger.log(f"✓ 基线 PPL: {baseline_ppl}")
 
-    # ========== Step 3: 计算梯度 ==========
-    if args.importance_method == 'taylor':
-        logger.log(f"\n[Step 3] 计算梯度（Taylor importance）...")
+    # ========== Step 3: 计算重要性（梯度或激活） ==========
+    activations = None
+    hessian_diag = None
+
+    if args.importance_method in ['taylor', 'taylor_2nd']:
+        logger.log(f"\n[Step 3] 计算梯度（{'一阶' if args.importance_method == 'taylor' else '二阶'} Taylor importance）...")
         logger.log(f"  加载 {args.num_samples} 个样本...")
 
         # 分批计算梯度以节省内存
@@ -362,6 +429,13 @@ def main():
             logger.log(f"  预计每个批次需要 5-10 分钟（取决于 CPU 性能）")
             logger.log(f"  总预计时间: {num_batches * 7:.0f} 分钟左右")
             logger.log("")
+
+        # 二阶泰勒需要累积 Hessian 对角线近似
+        if args.importance_method == 'taylor_2nd':
+            hessian_diag = {}
+            for name, param in model.named_parameters():
+                if param.requires_grad:
+                    hessian_diag[name] = torch.zeros_like(param.data)
 
         # 使用 tqdm 显示进度条
         pbar = tqdm(range(num_batches), desc="计算梯度", ncols=100)
@@ -387,6 +461,12 @@ def main():
             logger.log(f"  [批次 {batch_idx + 1}/{num_batches}] 反向传播...")
             loss.backward()
 
+            # 二阶泰勒：累积 Hessian 对角线（使用梯度平方近似）
+            if args.importance_method == 'taylor_2nd':
+                for name, param in model.named_parameters():
+                    if param.requires_grad and param.grad is not None:
+                        hessian_diag[name] += (param.grad ** 2) / num_batches
+
             batch_time = time.time() - batch_start_time
             total_loss += loss.item() * num_batches
 
@@ -411,20 +491,90 @@ def main():
         logger.log(f"  总耗时: {total_time:.2f}s ({total_time/60:.2f}min)")
         logger.log(f"  平均每批次: {total_time/num_batches:.2f}s")
 
-        activations = None
-    else:
-        logger.log("\n[Step 3] Wanda 方法暂不支持，请使用 --importance_method taylor")
-        return
+        if args.importance_method == 'taylor_2nd':
+            logger.log(f"  ✓ Hessian 对角线近似计算完成")
+
+    elif args.importance_method == 'wanda':
+        logger.log(f"\n[Step 3] 收集激活值（Wanda importance）...")
+        logger.log(f"  加载 {args.num_samples} 个样本...")
+
+        # 分批收集激活
+        batch_size = args.gradient_batch_size
+        num_batches = (args.num_samples + batch_size - 1) // batch_size
+        logger.log(f"  批次大小: {batch_size}, 总批次数: {num_batches}")
+
+        all_activations = {}
+        start_time = time.time()
+
+        pbar = tqdm(range(num_batches), desc="收集激活", ncols=100)
+
+        for batch_idx in pbar:
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, args.num_samples)
+            current_batch_size = end_idx - start_idx
+
+            batch_start_time = time.time()
+
+            # 加载当前批次
+            logger.log(f"  [批次 {batch_idx + 1}/{num_batches}] 加载数据...")
+            input_ids = get_examples('wikitext', tokenizer, num_samples=current_batch_size, seq_len=args.seq_len)
+            input_ids = input_ids.to(args.device)
+
+            # 收集激活
+            logger.log(f"  [批次 {batch_idx + 1}/{num_batches}] 收集激活...")
+            batch_activations = collect_layer_activations(model, input_ids, args.device)
+
+            # 累加激活值
+            for layer_idx, layer_acts in batch_activations.items():
+                if layer_idx not in all_activations:
+                    all_activations[layer_idx] = {}
+                for name, act in layer_acts.items():
+                    if name not in all_activations[layer_idx]:
+                        all_activations[layer_idx][name] = act.to(args.device)
+                    else:
+                        all_activations[layer_idx][name] += act.to(args.device)
+
+            batch_time = time.time() - batch_start_time
+            logger.log(f"  [批次 {batch_idx + 1}/{num_batches}] 完成！耗时: {batch_time:.2f}s")
+
+            pbar.set_postfix({'batch_time': f'{batch_time:.2f}s'})
+
+            del input_ids, batch_activations
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        pbar.close()
+
+        # 平均激活值
+        for layer_idx in all_activations:
+            for name in all_activations[layer_idx]:
+                all_activations[layer_idx][name] /= num_batches
+
+        activations = all_activations
+
+        total_time = time.time() - start_time
+        logger.log(f"✓ 激活值收集完成")
+        logger.log(f"  总耗时: {total_time:.2f}s ({total_time/60:.2f}min)")
+        logger.log(f"  平均每批次: {total_time/num_batches:.2f}s")
 
     # ========== Step 4: 构建全局分析表 ==========
     logger.log("\n[Step 4] 构建全局 Group 分析表...")
 
     layer_end = args.layer_end if args.layer_end else len(model.model.layers)
 
+    # 传递重要性信息
+    importance_info = {}
+    if args.importance_method in ['taylor', 'taylor_2nd']:
+        importance_info['gradients'] = {name: param.grad for name, param in model.named_parameters() if param.grad is not None}
+        if args.importance_method == 'taylor_2nd':
+            importance_info['hessian_diag'] = hessian_diag
+    elif args.importance_method == 'wanda':
+        importance_info['activations'] = activations
+
     df = build_global_group_table(
         model=model,
         importance_method=args.importance_method,
-        activations=activations,
+        importance_info=importance_info,
         layer_start=args.layer_start,
         layer_end=layer_end,
         head_dim=args.head_dim,

@@ -16,8 +16,18 @@
 
 $$S_u = \frac{I_u}{C_u}$$
 
-- **$I_u$ (Importance)**：基于一阶泰勒展开
-  $$I_u = \sum_{\theta \in u} \left| \theta \cdot \frac{\partial \mathcal{L}}{\partial \theta} \right|$$
+- **$I_u$ (Importance)**：支持三种计算方法
+
+  1. **一阶泰勒展开 (Taylor First-Order)**
+     $$I_u = \sum_{\theta \in u} \left| \theta \cdot \frac{\partial \mathcal{L}}{\partial \theta} \right|$$
+
+  2. **二阶泰勒展开 (Taylor Second-Order)**
+     $$I_u = \sum_{\theta \in u} \left| \theta \cdot \frac{\partial \mathcal{L}}{\partial \theta} \right| + \frac{1}{2} \left| \theta^2 \cdot H_{diag} \right|$$
+     其中 $H_{diag}$ 是 Hessian 对角线近似（通过梯度平方累加）
+
+  3. **Wanda (Weight and Activation)**
+     $$I_u = \sum_{\theta \in u} \left| \theta \cdot A_u \right|$$
+     其中 $A_u$ 是对应单元的平均激活值
 
 - **$C_u$ (Cost)**：单元的参数数量
   - Attention Group: ~6.3M 参数（1 KV + 4 Q heads）
@@ -34,13 +44,42 @@ $$S_u = \frac{I_u}{C_u}$$
 
 ## 快速开始
 
-### 基础用法
+### 基础用法（一阶 Taylor）
 
 ```bash
 python llama3_global_pruning.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_ckpt_log_name llama3_global_25pct \
     --pruning_ratio 0.25 \
+    --importance_method taylor \
+    --num_samples 128 \
+    --test_before_prune \
+    --test_after_prune \
+    --save_model
+```
+
+### 使用二阶 Taylor（更准确的重要性估计）
+
+```bash
+python llama3_global_pruning.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name llama3_global_25pct_2nd \
+    --pruning_ratio 0.25 \
+    --importance_method taylor_2nd \
+    --num_samples 128 \
+    --test_before_prune \
+    --test_after_prune \
+    --save_model
+```
+
+### 使用 Wanda（无需梯度计算）
+
+```bash
+python llama3_global_pruning.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_ckpt_log_name llama3_global_25pct_wanda \
+    --pruning_ratio 0.25 \
+    --importance_method wanda \
     --num_samples 128 \
     --test_before_prune \
     --test_after_prune \
@@ -80,6 +119,46 @@ python llama3_global_pruning.py \
 
 ---
 
+## 重要性计算方法对比
+
+### 三种方法的特点
+
+| 方法 | 计算成本 | 准确性 | 适用场景 |
+|------|---------|--------|---------|
+| **Taylor (一阶)** | 中等 | 较好 | 标准场景，平衡性能和计算成本 |
+| **Taylor_2nd (二阶)** | 高 | 最好 | 需要最高精度，愿意牺牲计算时间 |
+| **Wanda** | 低 | 良好 | 快速剪枝，无需反向传播 |
+
+### 详细对比
+
+**一阶 Taylor (`--importance_method taylor`)**
+- **原理**: 使用一阶泰勒展开 $I = |\theta \cdot g|$
+- **优点**: 计算适中，精度不错，被广泛验证
+- **缺点**: 未考虑曲率信息
+- **推荐**: 大多数场景的默认选择
+
+**二阶 Taylor (`--importance_method taylor_2nd`)**
+- **原理**: 使用二阶泰勒展开 $I = |\theta \cdot g| + \frac{1}{2}|\theta^2 \cdot H_{diag}|$
+- **优点**: 考虑 Hessian 曲率信息，理论上更准确
+- **缺点**: 需要累加梯度平方，额外内存和计算开销
+- **推荐**: 追求极致精度，或当一阶 Taylor 效果不理想时
+
+**Wanda (`--importance_method wanda`)**
+- **原理**: 使用权重和激活值乘积 $I = |\theta \cdot A|$
+- **优点**: 只需前向传播，无需反向传播，速度快
+- **缺点**: 未考虑梯度信息，可能不如 Taylor 精确
+- **推荐**: 快速剪枝原型验证，或计算资源受限场景
+
+### 性能测试建议
+
+建议先用一阶 Taylor 作为基准，然后尝试其他方法对比：
+
+1. **基准**: `--importance_method taylor`
+2. **追求精度**: `--importance_method taylor_2nd`
+3. **追求速度**: `--importance_method wanda`
+
+---
+
 ## 参数说明
 
 ### 剪枝参数
@@ -87,7 +166,7 @@ python llama3_global_pruning.py \
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `--pruning_ratio` | float | 0.25 | 目标剪枝率（相对于模型总参数） |
-| `--importance_method` | str | taylor | 重要性计算方法（taylor/wanda） |
+| `--importance_method` | str | taylor | 重要性计算方法（taylor/taylor_2nd/wanda） |
 | `--num_samples` | int | 128 | 用于计算重要性的样本数 |
 | `--remove_empty_layers` | flag | False | 是否移除被完全剪空的层 |
 

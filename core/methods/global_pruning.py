@@ -29,9 +29,19 @@ class GroupInfo:
         return f"Layer{self.layer_idx}-{self.group_type}-{self.group_idx}: score={self.score:.6f}"
 
 
-def compute_attention_group_importance_taylor(layer, head_dim=128, gqa_ratio=4):
+def compute_attention_group_importance_taylor(layer, head_dim=128, gqa_ratio=4, hessian_diag=None):
     """
     计算 Attention 每个 GQA group 的 Taylor importance
+
+    支持一阶和二阶泰勒展开：
+    - 一阶: importance = |weight × gradient|
+    - 二阶: importance = |weight × gradient| + 0.5 × |weight² × hessian_diag|
+
+    Args:
+        layer: Transformer层
+        head_dim: head维度
+        gqa_ratio: Q:KV比例
+        hessian_diag: Hessian对角线（可选，用于二阶）
 
     Returns:
         group_importance: Tensor [num_kv_heads]
@@ -39,7 +49,19 @@ def compute_attention_group_importance_taylor(layer, head_dim=128, gqa_ratio=4):
     salience = {}
     for name in ['q_proj', 'k_proj', 'v_proj', 'o_proj']:
         sub_layer = getattr(layer.self_attn, name)
-        salience[name] = (sub_layer.weight * sub_layer.weight.grad).abs()
+        # 一阶项
+        first_order = (sub_layer.weight * sub_layer.weight.grad).abs()
+
+        # 二阶项（如果提供了 Hessian）
+        if hessian_diag is not None:
+            full_name = f'model.layers.{layer.layer_idx}.self_attn.{name}.weight'
+            if full_name in hessian_diag:
+                second_order = 0.5 * (sub_layer.weight ** 2 * hessian_diag[full_name]).abs()
+                salience[name] = first_order + second_order
+            else:
+                salience[name] = first_order
+        else:
+            salience[name] = first_order
 
     q_imp = salience['q_proj'].sum(1)
     k_imp = salience['k_proj'].sum(1)
@@ -135,16 +157,43 @@ def compute_attention_group_importance_wanda(layer, activations, head_dim=128, g
     return group_importance
 
 
-def compute_mlp_group_importance_taylor(layer):
+def compute_mlp_group_importance_taylor(layer, hessian_diag=None):
     """
     计算 MLP 每个通道的 Taylor importance
+
+    支持一阶和二阶泰勒展开：
+    - 一阶: importance = |weight × gradient|
+    - 二阶: importance = |weight × gradient| + 0.5 × |weight² × hessian_diag|
+
+    Args:
+        layer: Transformer层
+        hessian_diag: Hessian对角线（可选，用于二阶）
 
     Returns:
         channel_importance: Tensor [intermediate_size]
     """
+    # 一阶项
     gate_salience = (layer.mlp.gate_proj.weight * layer.mlp.gate_proj.weight.grad).abs().sum(1)
     up_salience = (layer.mlp.up_proj.weight * layer.mlp.up_proj.weight.grad).abs().sum(1)
     down_salience = (layer.mlp.down_proj.weight * layer.mlp.down_proj.weight.grad).abs().sum(0)
+
+    # 二阶项（如果提供了 Hessian）
+    if hessian_diag is not None:
+        for name, sal_var in [('gate_proj', 'gate_salience'),
+                               ('up_proj', 'up_salience'),
+                               ('down_proj', 'down_salience')]:
+            full_name = f'model.layers.{layer.layer_idx}.mlp.{name}.weight'
+            if full_name in hessian_diag:
+                sub_layer = getattr(layer.mlp, name)
+                second_order = 0.5 * (sub_layer.weight ** 2 * hessian_diag[full_name]).abs()
+
+                # 累加到对应的 salience 变量
+                if name == 'gate_proj':
+                    gate_salience = gate_salience + second_order.sum(1)
+                elif name == 'up_proj':
+                    up_salience = up_salience + second_order.sum(1)
+                else:  # down_proj
+                    down_salience = down_salience + second_order.sum(0)
 
     channel_importance = gate_salience + up_salience + down_salience
     return channel_importance
@@ -243,7 +292,7 @@ def compute_mlp_group_cost(layer):
 def build_global_group_table(
     model,
     importance_method='taylor',
-    activations=None,
+    importance_info=None,
     layer_start=0,
     layer_end=None,
     head_dim=128,
@@ -255,8 +304,10 @@ def build_global_group_table(
 
     Args:
         model: LLaMA 模型
-        importance_method: 'taylor' 或 'wanda'
-        activations: 如果使用 wanda，需要提供激活值字典
+        importance_method: 'taylor', 'taylor_2nd' 或 'wanda'
+        importance_info: 重要性信息字典
+            - 对于 taylor/taylor_2nd: {'gradients': {...}, 'hessian_diag': {...}}
+            - 对于 wanda: {'activations': {...}}
         layer_start: 起始层
         layer_end: 结束层
         head_dim: head 维度
@@ -271,13 +322,28 @@ def build_global_group_table(
 
     num_layers = layer_end - layer_start
 
-    if importance_method == 'wanda' and activations is None:
-        raise ValueError("Wanda method requires activations")
+    # 提取重要性信息
+    activations = None
+    hessian_diag = None
+
+    if importance_info is not None:
+        if importance_method == 'wanda':
+            activations = importance_info.get('activations')
+            if activations is None:
+                raise ValueError("Wanda method requires 'activations' in importance_info")
+        elif importance_method in ['taylor', 'taylor_2nd']:
+            # Taylor 方法不需要额外提取（梯度已经在模型中）
+            if importance_method == 'taylor_2nd':
+                hessian_diag = importance_info.get('hessian_diag')
+                if hessian_diag is None:
+                    raise ValueError("Second-order Taylor requires 'hessian_diag' in importance_info")
 
     print(f"\n{'='*60}")
     print(f"构建全局 Group 分析表")
     print(f"{'='*60}")
     print(f"重要性方法: {importance_method}")
+    if importance_method == 'taylor_2nd':
+        print(f"  使用二阶泰勒展开（包含 Hessian 对角线）")
     print(f"层范围: [{layer_start}, {layer_end})")
     print(f"总层数: {num_layers}")
 
@@ -287,8 +353,10 @@ def build_global_group_table(
         layer = model.model.layers[layer_idx]
 
         # ========== Attention Groups ==========
-        if importance_method == 'taylor':
-            attn_importance = compute_attention_group_importance_taylor(layer, head_dim, gqa_ratio)
+        if importance_method in ['taylor', 'taylor_2nd']:
+            attn_importance = compute_attention_group_importance_taylor(
+                layer, head_dim, gqa_ratio, hessian_diag=hessian_diag
+            )
         else:  # wanda
             layer_activations = activations.get(layer_idx, {})
             attn_importance = compute_attention_group_importance_wanda(
@@ -313,8 +381,8 @@ def build_global_group_table(
             all_groups.append(group)
 
         # ========== MLP Groups ==========
-        if importance_method == 'taylor':
-            mlp_importance = compute_mlp_group_importance_taylor(layer)
+        if importance_method in ['taylor', 'taylor_2nd']:
+            mlp_importance = compute_mlp_group_importance_taylor(layer, hessian_diag=hessian_diag)
         else:  # wanda
             layer_activations = activations.get(layer_idx, {})
             mlp_importance = compute_mlp_group_importance_wanda(layer, layer_activations)

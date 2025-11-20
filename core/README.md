@@ -123,7 +123,8 @@ save_group_table(df, 'prune_log/group_analysis.json')
 ```
 
 **重要性计算方法**:
-- **Taylor**: `importance = |weight × gradient|`（需要先计算梯度）
+- **Taylor (一阶)**: `importance = |weight × gradient|`（需要先计算梯度）
+- **Taylor_2nd (二阶)**: `importance = |weight × gradient| + 0.5 × |weight² × hessian_diag|`（需要累加 Hessian 对角线）
 - **Wanda**: `importance = |weight × activation|`（需要收集激活值）
 
 **参数成本计算**:
@@ -146,15 +147,37 @@ save_group_table(df, 'prune_log/group_analysis.json')
 
 **演示脚本**:
 ```bash
+# 一阶 Taylor（默认）
 python demo_global_pruning.py \
     --base_model /newdata/LLMs/Llama-3-8B-Instruct \
     --save_table_path prune_log/global_group_table.json \
     --pruning_ratio 0.25 \
     --importance_method taylor \
     --num_samples 10
+
+# 二阶 Taylor（更精确）
+python demo_global_pruning.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_table_path prune_log/global_group_table_2nd.json \
+    --pruning_ratio 0.25 \
+    --importance_method taylor_2nd \
+    --num_samples 10
+
+# Wanda（更快，无需反向传播）
+python demo_global_pruning.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_table_path prune_log/global_group_table_wanda.json \
+    --pruning_ratio 0.25 \
+    --importance_method wanda \
+    --num_samples 10
 ```
 
 **使用场景**: 需要全局最优剪枝策略，愿意牺牲计算时间换取更好的剪枝效果
+
+**方法选择**:
+- 一阶 Taylor: 平衡精度和速度，大多数场景推荐
+- 二阶 Taylor: 需要最高精度时使用
+- Wanda: 需要快速剪枝或计算资源受限时使用
 
 ---
 

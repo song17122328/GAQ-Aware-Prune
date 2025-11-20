@@ -34,8 +34,8 @@ def main():
     parser.add_argument('--pruning_ratio', type=float, default=0.25,
                        help='目标剪枝率（相对于模型总参数）')
     parser.add_argument('--importance_method', type=str, default='taylor',
-                       choices=['taylor', 'wanda'],
-                       help='重要性计算方法')
+                       choices=['taylor', 'taylor_2nd', 'wanda'],
+                       help='重要性计算方法: taylor(一阶), taylor_2nd(二阶), wanda(权重×激活)')
     parser.add_argument('--num_samples', type=int, default=10,
                        help='用于计算梯度的样本数')
     parser.add_argument('--layer_start', type=int, default=0,
@@ -90,14 +90,24 @@ def main():
     logger.log(f"  总参数量: {total_params:,}")
 
     # ========== Step 2: 计算梯度（Taylor方法需要）==========
-    if args.importance_method == 'taylor':
-        logger.log("\n[Step 2] 计算梯度（Taylor importance）...")
+    importance_info = {}
+
+    if args.importance_method in ['taylor', 'taylor_2nd']:
+        logger.log(f"\n[Step 2] 计算梯度（{'二阶' if args.importance_method == 'taylor_2nd' else '一阶'} Taylor importance）...")
         logger.log(f"  加载 {args.num_samples} 个样本...")
 
         # 分批计算梯度以节省内存
         batch_size = 4
         num_batches = (args.num_samples + batch_size - 1) // batch_size
         logger.log(f"  批次大小: {batch_size}, 总批次数: {num_batches}")
+
+        # 初始化 Hessian 对角线（二阶方法需要）
+        hessian_diag = {}
+        if args.importance_method == 'taylor_2nd':
+            logger.log("  初始化 Hessian 对角线存储...")
+            for name, param in model.named_parameters():
+                if param.requires_grad:
+                    hessian_diag[name] = torch.zeros_like(param.data)
 
         model.zero_grad()
         total_loss = 0.0
@@ -122,6 +132,12 @@ def main():
             loss = outputs.loss / num_batches
             loss.backward()
 
+            # 累加 Hessian 对角线（二阶方法）
+            if args.importance_method == 'taylor_2nd':
+                for name, param in model.named_parameters():
+                    if param.requires_grad and param.grad is not None:
+                        hessian_diag[name] += (param.grad ** 2) / num_batches
+
             batch_time = time.time() - batch_start_time
             total_loss += loss.item() * num_batches
 
@@ -144,12 +160,16 @@ def main():
         logger.log(f"  总耗时: {total_time:.2f}s ({total_time/60:.2f}min)")
         logger.log(f"  平均每批次: {total_time/num_batches:.2f}s")
 
-        activations = None
+        # 准备 importance_info
+        importance_info['gradients'] = {name: param.grad for name, param in model.named_parameters() if param.grad is not None}
+        if args.importance_method == 'taylor_2nd':
+            importance_info['hessian_diag'] = hessian_diag
+            logger.log(f"  Hessian 对角线已累加")
 
     elif args.importance_method == 'wanda':
         logger.log("\n[Step 2] 收集激活值（Wanda importance）...")
         logger.log("⚠️ Wanda 方法需要实现 activation hooks，当前演示脚本暂不支持")
-        logger.log("   请使用 --importance_method taylor")
+        logger.log("   请使用 --importance_method taylor 或 taylor_2nd")
         return
 
     # ========== Step 3: 构建全局分析表 ==========
@@ -158,7 +178,7 @@ def main():
     df = build_global_group_table(
         model=model,
         importance_method=args.importance_method,
-        activations=activations,
+        importance_info=importance_info,
         layer_start=args.layer_start,
         layer_end=args.layer_end if args.layer_end else len(model.model.layers),
         head_dim=128,
