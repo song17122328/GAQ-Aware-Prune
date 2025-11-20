@@ -325,7 +325,8 @@ def main():
 
     # 显示GPU显存使用情况
     if torch.cuda.is_available() and 'cuda' in str(args.device).lower():
-        gpu_id = int(args.device.split(':')[-1]) if ':' in str(args.device) else 0
+        device_str = str(args.device)
+        gpu_id = int(device_str.split(':')[-1]) if ':' in device_str else 0
         allocated = torch.cuda.memory_allocated(gpu_id) / 1024**3
         reserved = torch.cuda.memory_reserved(gpu_id) / 1024**3
         total_mem = torch.cuda.get_device_properties(gpu_id).total_memory / 1024**3
