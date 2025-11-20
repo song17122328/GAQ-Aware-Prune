@@ -1,6 +1,6 @@
 - Training Parameters: 
-  - base_model: /newdata/LLMs/Llama-3-8B
-  - save_ckpt_log_name: llama3_prune
+  - base_model: /newdata/LLMs/Llama-3-8B-Instruct
+  - save_ckpt_log_name: llama3_prune_my
   - pruning_ratio: 0.25
   - pruner_type: taylor
   - temperature: 1.0
@@ -22,7 +22,7 @@
   - device: cuda
   - test_before_train: False
   - eval_device: cuda
-  - test_after_train: True
+  - test_after_train: False
   - seed: 42
   - save_model: True
   - torch_version: 2.8

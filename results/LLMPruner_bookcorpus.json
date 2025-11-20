@@ -1,0 +1,24 @@
+{
+  "model_path": "model/LLMPruner/llama3_prune_bookcorpus_local/pytorch_model.bin",
+  "timestamp": "2025-11-20T09:57:36.870484",
+  "metrics": {
+    "model_info": {
+      "total_params": 6776164352,
+      "trainable_params": 6776164352,
+      "total_params_M": 6776.164352,
+      "total_params_B": 6.776164352,
+      "attention_params": 1233125376,
+      "mlp_params": 4492099584,
+      "attention_params_M": 1233.125376,
+      "mlp_params_M": 4492.099584,
+      "attention_ratio": 0.18197985053831234,
+      "mlp_ratio": 0.6629265983895664,
+      "num_layers": 32,
+      "model_size_mb": 12924.507934570312,
+      "model_size_gb": 12.62158977985382
+    },
+    "ppl": {
+      "wikitext2 (wikitext-2-raw-v1)": 40759.34375
+    }
+  }
+}

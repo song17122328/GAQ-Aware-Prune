@@ -1,0 +1,75 @@
+{
+  "model_path": "/newdata/LLMs/Llama-3-8B-Instruct",
+  "timestamp": "2025-11-19T22:54:01.425851",
+  "metrics": {
+    "zeroshot": {
+      "boolq": {
+        "accuracy": 0.8440366972477065,
+        "full_results": {
+          "alias": "boolq",
+          "acc,none": 0.8440366972477065,
+          "acc_stderr,none": 0.006345771299246947
+        }
+      },
+      "piqa": {
+        "accuracy": 0.7883569096844396,
+        "full_results": {
+          "alias": "piqa",
+          "acc,none": 0.7763873775843307,
+          "acc_stderr,none": 0.009721489519176141,
+          "acc_norm,none": 0.7883569096844396,
+          "acc_norm_stderr,none": 0.009530351270479286
+        }
+      },
+      "hellaswag": {
+        "accuracy": 0.7559251145190201,
+        "full_results": {
+          "alias": "hellaswag",
+          "acc,none": 0.5798645688109938,
+          "acc_stderr,none": 0.0049257170080997835,
+          "acc_norm,none": 0.7559251145190201,
+          "acc_norm_stderr,none": 0.00428659497739078
+        }
+      },
+      "winogrande": {
+        "accuracy": 0.7166535122336227,
+        "full_results": {
+          "alias": "winogrande",
+          "acc,none": 0.7166535122336227,
+          "acc_stderr,none": 0.012664751735505396
+        }
+      },
+      "arc_easy": {
+        "accuracy": 0.7861952861952862,
+        "full_results": {
+          "alias": "arc_easy",
+          "acc,none": 0.8215488215488216,
+          "acc_stderr,none": 0.007856779984877,
+          "acc_norm,none": 0.7861952861952862,
+          "acc_norm_stderr,none": 0.008412828754119903
+        }
+      },
+      "arc_challenge": {
+        "accuracy": 0.5580204778156996,
+        "full_results": {
+          "alias": "arc_challenge",
+          "acc,none": 0.5366894197952219,
+          "acc_stderr,none": 0.014572000527756918,
+          "acc_norm,none": 0.5580204778156996,
+          "acc_norm_stderr,none": 0.014512682523128238
+        }
+      },
+      "openbookqa": {
+        "accuracy": 0.43,
+        "full_results": {
+          "alias": "openbookqa",
+          "acc,none": 0.354,
+          "acc_stderr,none": 0.02140758204791649,
+          "acc_norm,none": 0.43,
+          "acc_norm_stderr,none": 0.02216263442665287
+        }
+      }
+    },
+    "avg_zeroshot_acc": 0.6970268568136821
+  }
+}
