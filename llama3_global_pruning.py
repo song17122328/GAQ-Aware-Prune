@@ -490,13 +490,13 @@ def main():
         mlp_count = len(mlp_data)
         attn_params = attn_data['cost'].sum() if len(attn_data) > 0 else 0
         mlp_params = mlp_data['cost'].sum() if len(mlp_data) > 0 else 0
-        total_params = attn_params + mlp_params
+        total_params_prune = attn_params + mlp_params
 
         summary_lines.append(
             f"{layer_idx:<8} "
             f"{attn_count} groups ({attn_params:,} params)".ljust(20) + " "
             f"{mlp_count} channels ({mlp_params:,} params)".ljust(20) + " "
-            f"{total_params:,} params".ljust(20)
+            f"{total_params_prune:,} params".ljust(20)
         )
 
     summary_lines.append("-"*80)

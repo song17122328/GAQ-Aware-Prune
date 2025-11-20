@@ -1,25 +1,25 @@
 {
-  "model_path": "model/LLMPruner/25_Llama-3-8B-Instruct/pytorch_model.bin",
-  "timestamp": "2025-11-20T11:05:11.071731",
+  "model_path": "global_results/pytorch_model.bin",
+  "timestamp": "2025-11-20T23:01:27.204966",
   "metrics": {
     "model_info": {
-      "total_params": 6612586496,
-      "trainable_params": 6612586496,
-      "total_params_M": 6612.586496,
-      "total_params_B": 6.612586496,
-      "attention_params": 1069547520,
-      "mlp_params": 4492099584,
-      "attention_params_M": 1069.54752,
-      "mlp_params_M": 4492.099584,
-      "attention_ratio": 0.16174420109997453,
-      "mlp_ratio": 0.6793256446198931,
+      "total_params": 6612598784,
+      "trainable_params": 6612598784,
+      "total_params_M": 6612.598784,
+      "total_params_B": 6.612598784,
+      "attention_params": 1163919360,
+      "mlp_params": 4397740032,
+      "attention_params_M": 1163.91936,
+      "mlp_params_M": 4397.740032,
+      "attention_ratio": 0.1760154211709089,
+      "mlp_ratio": 0.6650547198842421,
       "num_layers": 32,
-      "model_size_mb": 12612.507934570312,
-      "model_size_gb": 12.31690227985382
+      "model_size_mb": 12612.531494140625,
+      "model_size_gb": 12.316925287246704
     },
     "ppl": {
-      "wikitext2 (wikitext-2-raw-v1)": 36.40312957763672,
-      "ptb": 55.18165588378906
+      "wikitext2 (wikitext-2-raw-v1)": 33.80427169799805,
+      "ptb": 54.89478302001953
     }
   }
 }
