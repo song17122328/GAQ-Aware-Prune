@@ -218,6 +218,10 @@ def main():
                        help='用于计算重要性的样本数')
     parser.add_argument('--gradient_batch_size', type=int, default=4,
                        help='梯度计算时的批次大小（用于节省内存）')
+    parser.add_argument('--seq_len', type=int, default=128,
+                       help='样本序列长度（减小可节省显存）')
+    parser.add_argument('--use_gradient_checkpointing', action='store_true',
+                       help='使用梯度检查点（节省显存但会慢一些）')
     parser.add_argument('--remove_empty_layers', action='store_true',
                        help='是否移除被完全剪空的层（自动深度剪枝）')
 
@@ -256,8 +260,8 @@ def main():
 
     # 其他
     from core.utils.get_best_gpu import get_best_gpu
-    # bestDevice= "cuda:"+str(get_best_gpu())
-    bestDevice = "cpu"
+    bestDevice = "cuda:"+str(get_best_gpu())  # 自动选择显存最大的GPU
+    # bestDevice = "cpu"  # 如果要用CPU，取消注释这行
     parser.add_argument('--device', type=str, default=bestDevice,
                        help='设备')
     parser.add_argument('--layer_start', type=int, default=0,
@@ -284,14 +288,25 @@ def main():
     # ========== Step 1: 加载模型 ==========
     logger.log("\n[Step 1] 加载模型...")
 
-    # 使用 device_map='auto' 让 transformers 自动管理内存
+    # 根据设备选择加载方式
+    if 'cpu' in args.device.lower():
+        device_map = args.device
+    else:
+        # 单GPU：直接指定设备，避免多GPU分布
+        device_map = args.device
+
     model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
         torch_dtype=torch.float16,
-        device_map = args.device,
+        device_map=device_map,
         low_cpu_mem_usage=True
     )
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
+
+    # 启用梯度检查点（节省显存）
+    if args.use_gradient_checkpointing:
+        logger.log("  启用梯度检查点（Gradient Checkpointing）...")
+        model.gradient_checkpointing_enable()
 
     # 获取实际使用的设备
     if hasattr(model, 'hf_device_map'):
@@ -307,6 +322,15 @@ def main():
     total_params = sum(p.numel() for p in model.parameters())
     logger.log(f"✓ 模型加载完成")
     logger.log(f"  总参数量: {total_params:,}")
+
+    # 显示GPU显存使用情况
+    if torch.cuda.is_available() and 'cuda' in str(args.device).lower():
+        gpu_id = int(args.device.split(':')[-1]) if ':' in str(args.device) else 0
+        allocated = torch.cuda.memory_allocated(gpu_id) / 1024**3
+        reserved = torch.cuda.memory_reserved(gpu_id) / 1024**3
+        total_mem = torch.cuda.get_device_properties(gpu_id).total_memory / 1024**3
+        logger.log(f"  GPU 显存: {allocated:.2f}GB / {total_mem:.2f}GB (已分配)")
+        logger.log(f"  GPU 显存: {reserved:.2f}GB / {total_mem:.2f}GB (已预留)")
 
     # ========== Step 2: 评估基线 ==========
     if args.test_before_prune:
@@ -347,7 +371,7 @@ def main():
 
             # 加载当前批次
             logger.log(f"  [批次 {batch_idx + 1}/{num_batches}] 加载数据...")
-            input_ids = get_examples('wikitext', tokenizer, num_samples=current_batch_size, seq_len=128)
+            input_ids = get_examples('wikitext', tokenizer, num_samples=current_batch_size, seq_len=args.seq_len)
             input_ids = input_ids.to(args.device)
 
             # 前向传播
