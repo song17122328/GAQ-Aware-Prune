@@ -30,7 +30,7 @@ def get_examples(
         torch.Tensor: tokenized input_ids, shape [num_samples, seq_len]
     """
 
-    # 只支持 wikitext2 数据集
+    # 支持 wikitext2 和 c4 数据集
     if dataset_name.lower() in ['wikitext', 'wikitext2', 'wikitext-2']:
         try:
             dataset = load_from_disk("/newdata/DataSets/wikitext2")[split]
@@ -38,10 +38,25 @@ def get_examples(
         except Exception as e:
             print(f"⚠️ 本地加载失败， (文件可能损坏或格式不匹配): {e}")
             print("从网上获取")
-            dataset = load_dataset("wikitext", "wikitext-2-raw-v1",split=split)
+            dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split=split)
         text_field = 'text'
+
+    elif dataset_name.lower() in ['c4']:
+        try:
+            print("尝试从本地加载 C4 数据集: /newdata/DataSets/c4/")
+            dataset = load_from_disk("/newdata/DataSets/c4")
+            # C4 数据集可能已经包含 train/validation split，或者是完整的数据集
+            if hasattr(dataset, split):
+                dataset = dataset[split]
+            print(f"✓ 成功从本地加载 C4 数据集 ({len(dataset)} 样本)")
+        except Exception as e:
+            print(f"⚠️ C4 本地加载失败: {e}")
+            print("尝试从 HuggingFace 下载...")
+            dataset = load_dataset("c4", "en", split=split, streaming=False)
+        text_field = 'text'
+
     else:
-        raise ValueError(f"不支持的数据集: {dataset_name}. 当前仅支持 wikitext2")
+        raise ValueError(f"不支持的数据集: {dataset_name}. 当前支持: wikitext2, c4")
 
     # 收集文本样本
     texts = []
