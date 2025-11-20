@@ -597,13 +597,13 @@ def main():
 
     # 确保输出目录存在
     output_dir = 'global_results'
-    if not hasattr(logger, 'env_dir'):
+    if not hasattr(logger, 'env_name'):
         logger.env_dir = output_dir
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir, exist_ok=True)
+    if not os.path.exists(logger.env_name):
+        os.makedirs(logger.env_name, exist_ok=True)
 
     # 保存分析表（按score排序）
-    table_path = os.path.join(logger.env_dir, 'global_group_table.csv')
+    table_path = os.path.join(logger.env_name, 'global_group_table.csv')
     df.to_csv(table_path, index=False)
     logger.log(f"✓ 分析表已保存（按score排序）: {table_path}")
 
