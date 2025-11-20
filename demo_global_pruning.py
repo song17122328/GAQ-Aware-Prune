@@ -42,7 +42,10 @@ def main():
                        help='起始层（debug用）')
     parser.add_argument('--layer_end', type=int, default=None,
                        help='结束层（debug用）')
-    parser.add_argument('--device', type=str, default='cuda',
+    
+    from core.utils.get_best_gpu import get_best_gpu
+    gpuNum ="cuda:"+ str(get_best_gpu())
+    parser.add_argument('--device', type=str, default=gpuNum,
                        help='设备')
 
     args = parser.parse_args()
@@ -66,7 +69,7 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
         torch_dtype=torch.float16,
-        device_map='auto',
+        device_map=args.device,
         low_cpu_mem_usage=True
     )
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)

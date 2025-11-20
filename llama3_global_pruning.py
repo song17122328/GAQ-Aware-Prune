@@ -441,7 +441,12 @@ def main():
     )
 
     logger.log(f"✓ 选中 {len(groups_to_prune)} 个 groups 进行剪枝")
-
+    output_dir = 'global_results'
+    if not hasattr(logger, 'env_dir'):
+        logger.env_dir = output_dir
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+    
     # 保存分析表
     table_path = os.path.join(logger.env_dir, 'global_group_table.csv')
     df.to_csv(table_path, index=False)
