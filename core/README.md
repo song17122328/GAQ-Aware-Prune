@@ -7,18 +7,156 @@ LLM剪枝所需的辅助工具模块集合。
 ```
 core/
 ├── __init__.py
-├── datasets/              # 数据集加载模块
+├── methods/              # 剪枝方法模块
+│   ├── __init__.py
+│   ├── gqa_aware.py     # GQA感知的Taylor剪枝
+│   └── global_pruning.py # 全局剪枝（基于Score=Importance/Cost）
+├── importance/           # 层重要性分析模块
+│   ├── __init__.py
+│   └── layer_analyzer.py # 层重要性评估
+├── trainer/             # 微调模块
+│   ├── __init__.py
+│   └── finetuner.py    # 剪枝后微调
+├── datasets/            # 数据集加载模块
 │   ├── __init__.py
 │   └── example_samples.py # 样本数据加载
-├── evaluator/            # 评估模块
+├── evaluator/          # 评估模块（已废弃，使用evaluation/）
 │   ├── __init__.py
-│   └── ppl.py           # 困惑度评估
-└── utils/               # 工具模块
-    ├── logger.py        # 日志工具
-    └── get_best_gpu.py  # GPU选择工具
+│   └── ppl.py         # 困惑度评估
+└── utils/             # 工具模块
+    ├── logger.py      # 日志工具
+    └── get_best_gpu.py # GPU选择工具
 ```
 
 ## 使用说明
+
+### 0. 剪枝方法模块 (`methods`)
+
+提供两种剪枝策略：
+
+#### 0.1 GQA-Aware 剪枝 (`gqa_aware.py`)
+
+**核心思想**: 保持 GQA 架构的 4:1 比例（4个Q heads对应1个KV head），按组剪枝
+
+**主要函数**:
+
+```python
+from core.methods.gqa_aware import (
+    compute_gqa_group_importance,
+    select_gqa_groups_to_prune,
+    prune_attention_by_gqa_groups
+)
+
+# 1. 计算每个GQA组的Taylor importance
+group_importance = compute_gqa_group_importance(layer, head_dim=128, gqa_ratio=4)
+# 返回: Tensor[num_kv_heads] - 每个KV head对应的组重要性
+
+# 2. 选择要剪枝的组（保留importance最高的）
+keep_indices, prune_indices = select_gqa_groups_to_prune(
+    group_importance,
+    target_num_kv_heads=6  # 从8个KV heads剪到6个
+)
+
+# 3. 执行剪枝
+num_q, num_kv = prune_attention_by_gqa_groups(
+    layer,
+    keep_indices,
+    head_dim=128,
+    gqa_ratio=4
+)
+# 剪枝后: 24Q:6KV (仍保持4:1)
+```
+
+**使用场景**: 逐层剪枝，每层根据自己的组重要性独立决定剪枝
+
+---
+
+#### 0.2 全局剪枝 (`global_pruning.py`)
+
+**核心思想**: 计算每个group的 **Score = Importance / Cost**，全局排序后选择score最低的groups剪枝
+
+**优势**:
+- 跨层对比：可以比较不同层的groups
+- 跨组件对比：可以比较Attention和MLP的groups
+- 效率优先：优先剪掉"性价比"最低的groups
+
+**主要函数**:
+
+```python
+from core.methods.global_pruning import (
+    build_global_group_table,
+    select_groups_to_prune,
+    save_group_table,
+    GroupInfo
+)
+
+# 1. 构建全局分析表
+df = build_global_group_table(
+    model=model,
+    importance_method='taylor',  # 或 'wanda'
+    layer_start=0,
+    layer_end=32,
+    head_dim=128,
+    gqa_ratio=4
+)
+# 返回: pandas.DataFrame，包含所有groups的信息，按score排序
+
+# 2. 选择要剪枝的groups
+groups_to_prune = select_groups_to_prune(
+    df=df,
+    pruning_ratio=0.25,  # 剪掉25%的模型参数
+    total_params=8_000_000_000
+)
+
+# 3. 保存分析表
+save_group_table(df, 'prune_log/group_analysis.json')
+```
+
+**DataFrame 结构**:
+```
+| layer_idx | group_type | group_idx | importance | cost   | score      |
+|-----------|------------|-----------|------------|--------|------------|
+| 5         | attention  | 2         | 0.123456   | 524288 | 2.356e-07  |  ← score最低，优先剪枝
+| 12        | mlp        | 1024      | 0.234567   | 12288  | 1.909e-05  |
+| ...       | ...        | ...       | ...        | ...    | ...        |
+| 15        | attention  | 4         | 9.876543   | 524288 | 1.884e-05  |  ← score最高，最不应该剪
+```
+
+**重要性计算方法**:
+- **Taylor**: `importance = |weight × gradient|`（需要先计算梯度）
+- **Wanda**: `importance = |weight × activation|`（需要收集激活值）
+
+**参数成本计算**:
+- **Attention Group**:
+  ```
+  cost = hidden_dim × (4×head_dim)  [q_proj]
+       + hidden_dim × head_dim      [k_proj]
+       + hidden_dim × head_dim      [v_proj]
+       + (4×head_dim) × hidden_dim  [o_proj]
+  ```
+  对于 Llama-3-8B: `cost = 4096 × (4×128) + 4096×128 + 4096×128 + (4×128)×4096 = 6,291,456`
+
+- **MLP Channel**:
+  ```
+  cost = hidden_dim  [gate_proj的一行]
+       + hidden_dim  [up_proj的一行]
+       + hidden_dim  [down_proj的一列]
+  ```
+  对于 Llama-3-8B: `cost = 4096 + 4096 + 4096 = 12,288`
+
+**演示脚本**:
+```bash
+python demo_global_pruning.py \
+    --base_model /newdata/LLMs/Llama-3-8B-Instruct \
+    --save_table_path prune_log/global_group_table.json \
+    --pruning_ratio 0.25 \
+    --importance_method taylor \
+    --num_samples 10
+```
+
+**使用场景**: 需要全局最优剪枝策略，愿意牺牲计算时间换取更好的剪枝效果
+
+---
 
 ### 1. 数据集模块 (`datasets`)
 
