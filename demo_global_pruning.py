@@ -74,7 +74,10 @@ def main():
     # 获取实际使用的设备
     if hasattr(model, 'hf_device_map'):
         logger.log(f"  模型分布: {model.hf_device_map}")
-        args.device = 'cuda'
+        # 获取第一个模块的设备（输入数据应该发送到这里）
+        first_device = next(iter(model.hf_device_map.values()))
+        args.device = f'cuda:{first_device}' if isinstance(first_device, int) else first_device
+        logger.log(f"  输入设备: {args.device}")
     else:
         args.device = next(model.parameters()).device
 
