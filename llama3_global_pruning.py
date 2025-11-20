@@ -83,15 +83,18 @@ def apply_global_pruning(model, groups_to_prune_df, head_dim=128, gqa_ratio=4, l
         attn_prune_indices = prune_info['attention']
 
         if len(attn_prune_indices) > 0:
-            # 获取当前 KV heads 数量
-            num_kv_heads = layer.self_attn.num_key_value_heads
+            # 获取当前 KV heads 数量（从权重形状推断）
+            k_proj_out_features = layer.self_attn.k_proj.out_features
+            num_kv_heads = k_proj_out_features // head_dim
 
             # 计算保留的 indices
             all_kv_indices = set(range(num_kv_heads))
             keep_kv_indices = sorted(list(all_kv_indices - set(attn_prune_indices)))
 
-            old_q = layer.self_attn.num_heads
-            old_kv = layer.self_attn.num_key_value_heads
+            # 从权重形状获取 Q heads 数量
+            q_proj_out_features = layer.self_attn.q_proj.out_features
+            old_q = q_proj_out_features // head_dim
+            old_kv = num_kv_heads
 
             if len(keep_kv_indices) > 0:
                 # 执行剪枝
@@ -441,20 +444,74 @@ def main():
     )
 
     logger.log(f"✓ 选中 {len(groups_to_prune)} 个 groups 进行剪枝")
+
+    # 确保输出目录存在
     output_dir = 'global_results'
     if not hasattr(logger, 'env_dir'):
         logger.env_dir = output_dir
         if not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
-    
-    # 保存分析表
+
+    # 保存分析表（按score排序）
     table_path = os.path.join(logger.env_dir, 'global_group_table.csv')
     df.to_csv(table_path, index=False)
-    logger.log(f"✓ 分析表已保存: {table_path}")
+    logger.log(f"✓ 分析表已保存（按score排序）: {table_path}")
 
     prune_table_path = os.path.join(logger.env_dir, 'groups_to_prune.csv')
     groups_to_prune.to_csv(prune_table_path, index=False)
-    logger.log(f"✓ 剪枝列表已保存: {prune_table_path}")
+    logger.log(f"✓ 剪枝列表已保存（按score排序）: {prune_table_path}")
+
+    # 保存按层排序的分析表
+    df_by_layer = df.sort_values(['layer_idx', 'group_type', 'group_idx']).reset_index(drop=True)
+    table_by_layer_path = os.path.join(logger.env_dir, 'global_group_table_by_layer.csv')
+    df_by_layer.to_csv(table_by_layer_path, index=False)
+    logger.log(f"✓ 分析表已保存（按层排序）: {table_by_layer_path}")
+
+    # 保存按层排序的剪枝列表
+    prune_by_layer = groups_to_prune.sort_values(['layer_idx', 'group_type', 'group_idx']).reset_index(drop=True)
+    prune_by_layer_path = os.path.join(logger.env_dir, 'groups_to_prune_by_layer.csv')
+    prune_by_layer.to_csv(prune_by_layer_path, index=False)
+    logger.log(f"✓ 剪枝列表已保存（按层排序）: {prune_by_layer_path}")
+
+    # 生成层级统计摘要
+    summary_lines = []
+    summary_lines.append("="*80)
+    summary_lines.append("各层剪枝统计摘要")
+    summary_lines.append("="*80)
+    summary_lines.append(f"{'Layer':<8} {'Attention剪枝':<20} {'MLP剪枝':<20} {'总参数剪枝':<20}")
+    summary_lines.append("-"*80)
+
+    for layer_idx in sorted(groups_to_prune['layer_idx'].unique()):
+        layer_data = groups_to_prune[groups_to_prune['layer_idx'] == layer_idx]
+        attn_data = layer_data[layer_data['group_type'] == 'attention']
+        mlp_data = layer_data[layer_data['group_type'] == 'mlp']
+
+        attn_count = len(attn_data)
+        mlp_count = len(mlp_data)
+        attn_params = attn_data['cost'].sum() if len(attn_data) > 0 else 0
+        mlp_params = mlp_data['cost'].sum() if len(mlp_data) > 0 else 0
+        total_params = attn_params + mlp_params
+
+        summary_lines.append(
+            f"{layer_idx:<8} "
+            f"{attn_count} groups ({attn_params:,} params)".ljust(20) + " "
+            f"{mlp_count} channels ({mlp_params:,} params)".ljust(20) + " "
+            f"{total_params:,} params".ljust(20)
+        )
+
+    summary_lines.append("-"*80)
+    summary_lines.append(f"总计: {len(groups_to_prune)} groups, "
+                        f"{groups_to_prune['cost'].sum():,} params")
+    summary_lines.append("="*80)
+
+    # 保存摘要文件
+    summary_path = os.path.join(logger.env_dir, 'pruning_summary_by_layer.txt')
+    with open(summary_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(summary_lines))
+    logger.log(f"✓ 层级统计摘要已保存: {summary_path}")
+
+    # 也在日志中显示
+    logger.log("\n" + '\n'.join(summary_lines))
 
     # ========== Step 6: 执行全局剪枝 ==========
     logger.log(f"\n[Step 6] 执行全局剪枝...")
