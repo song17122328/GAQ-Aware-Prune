@@ -328,6 +328,13 @@ def main():
         total_loss = 0.0
         start_time = time.time()
 
+        # 如果在 CPU 上运行，给出提示
+        if 'cpu' in str(args.device).lower():
+            logger.log(f"  ⚠️ 在 CPU 上运行，速度会非常慢！")
+            logger.log(f"  预计每个批次需要 5-10 分钟（取决于 CPU 性能）")
+            logger.log(f"  总预计时间: {num_batches * 7:.0f} 分钟左右")
+            logger.log("")
+
         # 使用 tqdm 显示进度条
         pbar = tqdm(range(num_batches), desc="计算梯度", ncols=100)
 
@@ -339,16 +346,23 @@ def main():
             batch_start_time = time.time()
 
             # 加载当前批次
+            logger.log(f"  [批次 {batch_idx + 1}/{num_batches}] 加载数据...")
             input_ids = get_examples('wikitext', tokenizer, num_samples=current_batch_size, seq_len=128)
             input_ids = input_ids.to(args.device)
 
-            # 前向+反向传播
+            # 前向传播
+            logger.log(f"  [批次 {batch_idx + 1}/{num_batches}] 前向传播...")
             outputs = model(input_ids, labels=input_ids)
             loss = outputs.loss / num_batches  # 归一化
+
+            # 反向传播
+            logger.log(f"  [批次 {batch_idx + 1}/{num_batches}] 反向传播...")
             loss.backward()
 
             batch_time = time.time() - batch_start_time
             total_loss += loss.item() * num_batches
+
+            logger.log(f"  [批次 {batch_idx + 1}/{num_batches}] 完成！耗时: {batch_time:.2f}s, loss: {loss.item() * num_batches:.4f}")
 
             # 更新进度条信息
             pbar.set_postfix({
