@@ -102,12 +102,14 @@ def main():
         logger.log(f"  批次大小: {batch_size}, 总批次数: {num_batches}")
 
         # 初始化 Hessian 对角线（二阶方法需要）
+        # ⚠️ 存储在CPU上以避免GPU OOM
         hessian_diag = {}
         if args.importance_method == 'taylor_2nd':
-            logger.log("  初始化 Hessian 对角线存储...")
+            logger.log("  初始化 Hessian 对角线存储（在CPU上以节省GPU显存）...")
             for name, param in model.named_parameters():
                 if param.requires_grad:
-                    hessian_diag[name] = torch.zeros_like(param.data)
+                    # 存储在CPU上，避免占用GPU显存
+                    hessian_diag[name] = torch.zeros_like(param.data, device='cpu')
 
         model.zero_grad()
         total_loss = 0.0
@@ -136,7 +138,8 @@ def main():
             if args.importance_method == 'taylor_2nd':
                 for name, param in model.named_parameters():
                     if param.requires_grad and param.grad is not None:
-                        hessian_diag[name] += (param.grad ** 2) / num_batches
+                        # 将梯度平方移动到CPU后累加，避免GPU OOM
+                        hessian_diag[name] += (param.grad ** 2).cpu() / num_batches
 
             batch_time = time.time() - batch_start_time
             total_loss += loss.item() * num_batches

@@ -56,7 +56,9 @@ def compute_attention_group_importance_taylor(layer, head_dim=128, gqa_ratio=4, 
         if hessian_diag is not None:
             full_name = f'model.layers.{layer.layer_idx}.self_attn.{name}.weight'
             if full_name in hessian_diag:
-                second_order = 0.5 * (sub_layer.weight ** 2 * hessian_diag[full_name]).abs()
+                # Hessian 存储在CPU上，需要移动到与weight相同的设备
+                hess = hessian_diag[full_name].to(sub_layer.weight.device)
+                second_order = 0.5 * (sub_layer.weight ** 2 * hess).abs()
                 salience[name] = first_order + second_order
             else:
                 salience[name] = first_order
@@ -185,7 +187,9 @@ def compute_mlp_group_importance_taylor(layer, hessian_diag=None):
             full_name = f'model.layers.{layer.layer_idx}.mlp.{name}.weight'
             if full_name in hessian_diag:
                 sub_layer = getattr(layer.mlp, name)
-                second_order = 0.5 * (sub_layer.weight ** 2 * hessian_diag[full_name]).abs()
+                # Hessian 存储在CPU上，需要移动到与weight相同的设备
+                hess = hessian_diag[full_name].to(sub_layer.weight.device)
+                second_order = 0.5 * (sub_layer.weight ** 2 * hess).abs()
 
                 # 累加到对应的 salience 变量
                 if name == 'gate_proj':
