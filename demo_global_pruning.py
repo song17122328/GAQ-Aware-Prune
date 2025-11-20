@@ -12,6 +12,8 @@
 
 import torch
 import argparse
+import time
+from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from core.methods.global_pruning import (
@@ -64,9 +66,17 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
         torch_dtype=torch.float16,
-        device_map=args.device
+        device_map='auto',
+        low_cpu_mem_usage=True
     )
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
+
+    # 获取实际使用的设备
+    if hasattr(model, 'hf_device_map'):
+        logger.log(f"  模型分布: {model.hf_device_map}")
+        args.device = 'cuda'
+    else:
+        args.device = next(model.parameters()).device
 
     # 统计模型参数
     total_params = sum(p.numel() for p in model.parameters())
@@ -76,20 +86,57 @@ def main():
     # ========== Step 2: 计算梯度（Taylor方法需要）==========
     if args.importance_method == 'taylor':
         logger.log("\n[Step 2] 计算梯度（Taylor importance）...")
-
-        # 加载样本数据
         logger.log(f"  加载 {args.num_samples} 个样本...")
-        input_ids = get_examples('wikitext', tokenizer, num_samples=args.num_samples, seq_len=128)
-        input_ids = input_ids.to(args.device)
 
-        # 前向+反向传播
+        # 分批计算梯度以节省内存
+        batch_size = 4
+        num_batches = (args.num_samples + batch_size - 1) // batch_size
+        logger.log(f"  批次大小: {batch_size}, 总批次数: {num_batches}")
+
         model.zero_grad()
-        logger.log(f"  前向+反向传播...")
-        outputs = model(input_ids, labels=input_ids)
-        loss = outputs.loss
-        loss.backward()
+        total_loss = 0.0
+        start_time = time.time()
 
-        logger.log(f"✓ 梯度计算完成 (loss={loss.item():.4f})")
+        # 使用 tqdm 显示进度条
+        pbar = tqdm(range(num_batches), desc="计算梯度", ncols=100)
+
+        for batch_idx in pbar:
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, args.num_samples)
+            current_batch_size = end_idx - start_idx
+
+            batch_start_time = time.time()
+
+            # 加载当前批次
+            input_ids = get_examples('wikitext', tokenizer, num_samples=current_batch_size, seq_len=128)
+            input_ids = input_ids.to(args.device)
+
+            # 前向+反向传播
+            outputs = model(input_ids, labels=input_ids)
+            loss = outputs.loss / num_batches
+            loss.backward()
+
+            batch_time = time.time() - batch_start_time
+            total_loss += loss.item() * num_batches
+
+            # 更新进度条信息
+            pbar.set_postfix({
+                'loss': f'{loss.item() * num_batches:.4f}',
+                'batch_time': f'{batch_time:.2f}s'
+            })
+
+            # 清理内存
+            del input_ids, outputs, loss
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        pbar.close()
+
+        total_time = time.time() - start_time
+        logger.log(f"✓ 梯度计算完成")
+        logger.log(f"  平均 loss: {total_loss:.4f}")
+        logger.log(f"  总耗时: {total_time:.2f}s ({total_time/60:.2f}min)")
+        logger.log(f"  平均每批次: {total_time/num_batches:.2f}s")
 
         activations = None
 

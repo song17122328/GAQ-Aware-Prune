@@ -12,6 +12,8 @@
 import os
 import torch
 import argparse
+import time
+from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from core.methods.global_pruning import (
@@ -214,6 +216,8 @@ def main():
                        help='重要性计算方法')
     parser.add_argument('--num_samples', type=int, default=128,
                        help='用于计算重要性的样本数')
+    parser.add_argument('--gradient_batch_size', type=int, default=4,
+                       help='梯度计算时的批次大小（用于节省内存）')
     parser.add_argument('--remove_empty_layers', action='store_true',
                        help='是否移除被完全剪空的层（自动深度剪枝）')
 
@@ -276,12 +280,22 @@ def main():
 
     # ========== Step 1: 加载模型 ==========
     logger.log("\n[Step 1] 加载模型...")
+
+    # 使用 device_map='auto' 让 transformers 自动管理内存
     model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
         torch_dtype=torch.float16,
-        device_map=args.device
+        device_map='auto',
+        low_cpu_mem_usage=True
     )
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
+
+    # 获取实际使用的设备
+    if hasattr(model, 'hf_device_map'):
+        logger.log(f"  模型分布: {model.hf_device_map}")
+        args.device = 'cuda'  # 确保后续代码使用正确的设备
+    else:
+        args.device = next(model.parameters()).device
 
     # 统计参数
     total_params = sum(p.numel() for p in model.parameters())
@@ -299,16 +313,56 @@ def main():
         logger.log(f"\n[Step 3] 计算梯度（Taylor importance）...")
         logger.log(f"  加载 {args.num_samples} 个样本...")
 
-        input_ids = get_examples('wikitext', tokenizer, num_samples=args.num_samples, seq_len=128)
-        input_ids = input_ids.to(args.device)
+        # 分批计算梯度以节省内存
+        batch_size = args.gradient_batch_size
+        num_batches = (args.num_samples + batch_size - 1) // batch_size
+        logger.log(f"  批次大小: {batch_size}, 总批次数: {num_batches}")
 
         model.zero_grad()
-        logger.log(f"  前向+反向传播...")
-        outputs = model(input_ids, labels=input_ids)
-        loss = outputs.loss
-        loss.backward()
+        total_loss = 0.0
+        start_time = time.time()
 
-        logger.log(f"✓ 梯度计算完成 (loss={loss.item():.4f})")
+        # 使用 tqdm 显示进度条
+        pbar = tqdm(range(num_batches), desc="计算梯度", ncols=100)
+
+        for batch_idx in pbar:
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, args.num_samples)
+            current_batch_size = end_idx - start_idx
+
+            batch_start_time = time.time()
+
+            # 加载当前批次
+            input_ids = get_examples('wikitext', tokenizer, num_samples=current_batch_size, seq_len=128)
+            input_ids = input_ids.to(args.device)
+
+            # 前向+反向传播
+            outputs = model(input_ids, labels=input_ids)
+            loss = outputs.loss / num_batches  # 归一化
+            loss.backward()
+
+            batch_time = time.time() - batch_start_time
+            total_loss += loss.item() * num_batches
+
+            # 更新进度条信息
+            pbar.set_postfix({
+                'loss': f'{loss.item() * num_batches:.4f}',
+                'batch_time': f'{batch_time:.2f}s'
+            })
+
+            # 清理内存
+            del input_ids, outputs, loss
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        pbar.close()
+
+        total_time = time.time() - start_time
+        logger.log(f"✓ 梯度计算完成")
+        logger.log(f"  平均 loss: {total_loss:.4f}")
+        logger.log(f"  总耗时: {total_time:.2f}s ({total_time/60:.2f}min)")
+        logger.log(f"  平均每批次: {total_time/num_batches:.2f}s")
+
         activations = None
     else:
         logger.log("\n[Step 3] Wanda 方法暂不支持，请使用 --importance_method taylor")
