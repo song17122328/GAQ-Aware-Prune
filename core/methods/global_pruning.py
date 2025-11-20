@@ -29,7 +29,7 @@ class GroupInfo:
         return f"Layer{self.layer_idx}-{self.group_type}-{self.group_idx}: score={self.score:.6f}"
 
 
-def compute_attention_group_importance_taylor(layer, head_dim=128, gqa_ratio=4, hessian_diag=None):
+def compute_attention_group_importance_taylor(layer, head_dim=128, gqa_ratio=4, hessian_diag=None, layer_idx=None):
     """
     计算 Attention 每个 GQA group 的 Taylor importance
 
@@ -42,6 +42,7 @@ def compute_attention_group_importance_taylor(layer, head_dim=128, gqa_ratio=4, 
         head_dim: head维度
         gqa_ratio: Q:KV比例
         hessian_diag: Hessian对角线（可选，用于二阶）
+        layer_idx: 层索引（用于构建Hessian键名）
 
     Returns:
         group_importance: Tensor [num_kv_heads]
@@ -53,8 +54,8 @@ def compute_attention_group_importance_taylor(layer, head_dim=128, gqa_ratio=4, 
         first_order = (sub_layer.weight * sub_layer.weight.grad).abs()
 
         # 二阶项（如果提供了 Hessian）
-        if hessian_diag is not None:
-            full_name = f'model.layers.{layer.layer_idx}.self_attn.{name}.weight'
+        if hessian_diag is not None and layer_idx is not None:
+            full_name = f'model.layers.{layer_idx}.self_attn.{name}.weight'
             if full_name in hessian_diag:
                 # Hessian 存储在CPU上，需要移动到与weight相同的设备
                 hess = hessian_diag[full_name].to(sub_layer.weight.device)
@@ -159,7 +160,7 @@ def compute_attention_group_importance_wanda(layer, activations, head_dim=128, g
     return group_importance
 
 
-def compute_mlp_group_importance_taylor(layer, hessian_diag=None):
+def compute_mlp_group_importance_taylor(layer, hessian_diag=None, layer_idx=None):
     """
     计算 MLP 每个通道的 Taylor importance
 
@@ -170,6 +171,7 @@ def compute_mlp_group_importance_taylor(layer, hessian_diag=None):
     Args:
         layer: Transformer层
         hessian_diag: Hessian对角线（可选，用于二阶）
+        layer_idx: 层索引（用于构建Hessian键名）
 
     Returns:
         channel_importance: Tensor [intermediate_size]
@@ -180,11 +182,11 @@ def compute_mlp_group_importance_taylor(layer, hessian_diag=None):
     down_salience = (layer.mlp.down_proj.weight * layer.mlp.down_proj.weight.grad).abs().sum(0)
 
     # 二阶项（如果提供了 Hessian）
-    if hessian_diag is not None:
+    if hessian_diag is not None and layer_idx is not None:
         for name, sal_var in [('gate_proj', 'gate_salience'),
                                ('up_proj', 'up_salience'),
                                ('down_proj', 'down_salience')]:
-            full_name = f'model.layers.{layer.layer_idx}.mlp.{name}.weight'
+            full_name = f'model.layers.{layer_idx}.mlp.{name}.weight'
             if full_name in hessian_diag:
                 sub_layer = getattr(layer.mlp, name)
                 # Hessian 存储在CPU上，需要移动到与weight相同的设备
@@ -359,7 +361,7 @@ def build_global_group_table(
         # ========== Attention Groups ==========
         if importance_method in ['taylor', 'taylor_2nd']:
             attn_importance = compute_attention_group_importance_taylor(
-                layer, head_dim, gqa_ratio, hessian_diag=hessian_diag
+                layer, head_dim, gqa_ratio, hessian_diag=hessian_diag, layer_idx=layer_idx
             )
         else:  # wanda
             layer_activations = activations.get(layer_idx, {})
@@ -386,7 +388,7 @@ def build_global_group_table(
 
         # ========== MLP Groups ==========
         if importance_method in ['taylor', 'taylor_2nd']:
-            mlp_importance = compute_mlp_group_importance_taylor(layer, hessian_diag=hessian_diag)
+            mlp_importance = compute_mlp_group_importance_taylor(layer, hessian_diag=hessian_diag, layer_idx=layer_idx)
         else:  # wanda
             layer_activations = activations.get(layer_idx, {})
             mlp_importance = compute_mlp_group_importance_wanda(layer, layer_activations)
