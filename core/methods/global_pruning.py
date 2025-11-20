@@ -447,3 +447,11 @@ if __name__ == '__main__':
     # 4. 执行剪枝
     # ... (根据 groups_to_prune 剪枝模型)
     """)
+    model = "/newdata/LLMs/Llama-3-8B-Instruct"
+    df = build_global_group_table(
+        model,
+        importance_method='taylor',
+        layer_start=0,
+        layer_end=32
+    )
+    save_group_table(df, 'group_analysis.json')

@@ -5,7 +5,7 @@
 """
 
 import torch
-from datasets import load_dataset
+from datasets import load_dataset,load_from_disk
 from typing import Optional
 
 
@@ -32,7 +32,13 @@ def get_examples(
 
     # 只支持 wikitext2 数据集
     if dataset_name.lower() in ['wikitext', 'wikitext2', 'wikitext-2']:
-        dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split=split)
+        try:
+            dataset = load_from_disk("/newdata/DataSets/wikitext2")[split]
+            print("✅ 本地加载成功！")
+        except Exception as e:
+            print(f"⚠️ 本地加载失败， (文件可能损坏或格式不匹配): {e}")
+            print("从网上获取")
+            dataset = load_dataset("wikitext", "wikitext-2-raw-v1",split=split)
         text_field = 'text'
     else:
         raise ValueError(f"不支持的数据集: {dataset_name}. 当前仅支持 wikitext2")

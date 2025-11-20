@@ -255,7 +255,10 @@ def main():
                        help='保存剪枝后的模型')
 
     # 其他
-    parser.add_argument('--device', type=str, default='cuda',
+    from core.utils.get_best_gpu import get_best_gpu
+    # bestDevice= "cuda:"+str(get_best_gpu())
+    bestDevice = "cpu"
+    parser.add_argument('--device', type=str, default=bestDevice,
                        help='设备')
     parser.add_argument('--layer_start', type=int, default=0,
                        help='起始层（debug用）')
