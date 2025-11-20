@@ -112,7 +112,7 @@ def main():
 
     # 剪枝参数
     parser.add_argument('--pruning_ratio', type=float, default=0.25,
-                       help='目标剪枝率（相对于Attention+MLP总参数量，0.25表示剪掉Attention+MLP总参数的25%）')
+                       help='目标剪枝率（相对于模型总参数量，0.25表示剪掉整个模型总参数的25%）')
     parser.add_argument('--pruning_distribution', type=str, default='5:5',
                        help='Attention和MLP的剪枝参数量比例（例如: 5:5表示各占一半, 10:0表示只剪MLP, 0:10表示只剪Attention）')
 
@@ -413,9 +413,10 @@ def main():
     logger.log("剪枝参数量分配计算过程:")
     logger.log("-" * 60)
 
-    total_pruned_params = int(total_prunable_params * args.pruning_ratio)
+    # 计算总目标剪枝参数量（基于整个模型的总参数量）
+    total_pruned_params = int(before_pruning_parameters * args.pruning_ratio)
     logger.log(f"\n1. 计算总目标剪枝参数量:")
-    logger.log(f"   total_pruned = {total_prunable_params:,} × {args.pruning_ratio}")
+    logger.log(f"   total_pruned = {before_pruning_parameters:,} (模型总参数) × {args.pruning_ratio}")
     logger.log(f"   total_pruned = {total_pruned_params:,}")
 
     logger.log(f"\n2. 根据分布比例 {args.attn_ratio}:{args.mlp_ratio} 分配:")
@@ -452,16 +453,17 @@ def main():
     else:
         logger.log("   ✅ 参数量配置有效")
 
-    logger.log(f"\n6. 计算占全局模型的剪枝率:")
+    logger.log(f"\n6. 验证全局剪枝率:")
     global_prune_rate = total_pruned_params / before_pruning_parameters
-    logger.log(f"   全局剪枝率 = {total_pruned_params:,} / {before_pruning_parameters:,} = {global_prune_rate:.2%}")
+    logger.log(f"   实际全局剪枝率 = {total_pruned_params:,} / {before_pruning_parameters:,} = {global_prune_rate:.2%}")
+    logger.log(f"   目标全局剪枝率 = {args.pruning_ratio:.1%}")
 
     logger.log(f"\n" + "=" * 60)
     logger.log("剪枝配置总结:")
     logger.log("=" * 60)
-    logger.log(f"总目标剪枝量: {total_pruned_params:,} ({args.pruning_ratio:.1%} of Attention+MLP, {global_prune_rate:.2%} of total)")
-    logger.log(f"  -> Attention: {attn_pruned_params:,} ({attn_prune_rate:.2%} of Attention)")
-    logger.log(f"  -> MLP: {mlp_pruned_params:,} ({mlp_prune_rate:.2%} of MLP)")
+    logger.log(f"总目标剪枝量: {total_pruned_params:,} ({args.pruning_ratio:.1%} of total 模型参数)")
+    logger.log(f"  -> Attention: {attn_pruned_params:,} ({attn_prune_rate:.2%} of Attention, {attn_pruned_params/before_pruning_parameters:.2%} of total)")
+    logger.log(f"  -> MLP: {mlp_pruned_params:,} ({mlp_prune_rate:.2%} of MLP, {mlp_pruned_params/before_pruning_parameters:.2%} of total)")
 
     # 创建计算器
     calculator = UnbalancedStructuredPruningCalculator(layer_importance, num_layers)
