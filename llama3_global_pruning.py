@@ -288,7 +288,7 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
         torch_dtype=torch.float16,
-        device_map='auto',
+        device_map = args.device,
         low_cpu_mem_usage=True
     )
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
